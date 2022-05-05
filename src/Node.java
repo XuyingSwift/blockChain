@@ -104,15 +104,11 @@ public class Node {
             System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Received reply for message [" + origMessage.getGuid() + "] to node " + origMessage.getDestination() + ", processing" + Colors.ANSI_RESET);
             //TODO: more processing based on type of original message and contents of reply
             if (origMessage.getType().equals(Message.TEST_TYPE)) {
-                if (!message.getPayload().equals(Server.ACK)) {
-                    JsonObject replyJson = new JsonParser().parse(message.getPayload()).getAsJsonObject();
-
-                    if (replyJson.get("response").equals("BAD")) {
-                        System.out.println(Colors.ANSI_YELLOW + "It didn't like my number :(" + Colors.ANSI_RESET);
-                    }
-                    else if (replyJson.get("response").equals("GOOD")) {
-                        System.out.println(Colors.ANSI_YELLOW + "It liked my number :)" + Colors.ANSI_RESET);
-                    }
+                if (msgJson.get("response").getAsString().equals("BAD")) {
+                    System.out.println(Colors.ANSI_YELLOW + "It didn't like my number :(" + Colors.ANSI_RESET);
+                }
+                else if (msgJson.get("response").getAsString().equals("GOOD")) {
+                    System.out.println(Colors.ANSI_YELLOW + "It liked my number :)" + Colors.ANSI_RESET);
                 }
             }
         }
@@ -157,11 +153,12 @@ public class Node {
         JsonObject msgJson = new JsonParser().parse(message.getPayload()).getAsJsonObject();
         int theValue = msgJson.get("theValue").getAsInt();
 
-        String replyPayload;
+        JsonObject replyJson = new JsonObject();
+        replyJson.addProperty("originalMessageId", message.getGuid().toString());
 
         if (theValue % 2 == 0) {
             System.out.println(Colors.ANSI_YELLOW + "Value " + theValue + " is even" + Colors.ANSI_RESET);
-            replyPayload = Server.ACK;
+            replyJson.addProperty("response", Server.ACK);
         }
         else {
             System.out.println(Colors.ANSI_YELLOW + "Value " + theValue + " is odd" + Colors.ANSI_RESET);
@@ -170,19 +167,15 @@ public class Node {
 
             if (rand.nextBoolean()) {
                 System.out.println(Colors.ANSI_YELLOW + "I DON'T LIKE IT" + Colors.ANSI_RESET);
-                JsonObject replyJson = new JsonObject();
                 replyJson.addProperty("response", "BAD");
-                replyPayload = replyJson.toString();
             }
             else {
                 System.out.println(Colors.ANSI_YELLOW + "it's okay" + Colors.ANSI_RESET);
-                JsonObject replyJson = new JsonObject();
                 replyJson.addProperty("response", "GOOD");
-                replyPayload = replyJson.toString();
             }
         }
 
-        Message reply = new Message(this.name, message.getSender(), Message.REPLY_TYPE, replyPayload);
+        Message reply = new Message(this.name, message.getSender(), Message.REPLY_TYPE, replyJson.toString());
         sendMessage(reply.getDestination(), reply);
     }
 }
