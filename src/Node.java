@@ -37,6 +37,7 @@ public class Node {
             if (testing && ((System.nanoTime() - lastTest) / 1000000) >= 5000) { //run test block every 5 seconds if in testing mode
                 doTests();
                 lastTest = System.nanoTime();
+                System.out.println(">>>>" + server.getMessageHolderCount() + " message holders, " + openClients.size() + " open clients" + "<<<<");
             }
 
             nextHolder = server.getNextReadyHolder();
@@ -83,8 +84,9 @@ public class Node {
         }
     }
 
-    private void sendMessage(String dest, Message message) {
-        this.awaitingReplies.put(message.getGuid(), message);
+    private void sendMessage(String dest, Message message, boolean waitForReply) {
+        if (waitForReply) { this.awaitingReplies.put(message.getGuid(), message); }
+
         Client client = new Client(this.remoteNodes.get(dest).getAddress(), this.remoteNodes.get(dest).getPort(), message);
         client.start();
         this.openClients.add(client);
@@ -146,7 +148,7 @@ public class Node {
         Message testMessage = new Message(this.name, destNode, Message.TEST_TYPE, msgJson.toString());
         System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Sending test message [" + testMessage.getGuid() + "] to node " + destNode + Colors.ANSI_RESET);
         System.out.println(Colors.ANSI_CYAN + "     " + testMessage.getPayload() + Colors.ANSI_RESET);
-        sendMessage(destNode, testMessage);
+        sendMessage(destNode, testMessage, true);
     }
 
     private void processTestMessage(Message message) {
@@ -176,6 +178,6 @@ public class Node {
         }
 
         Message reply = new Message(this.name, message.getSender(), Message.REPLY_TYPE, replyJson.toString());
-        sendMessage(reply.getDestination(), reply);
+        sendMessage(reply.getDestination(), reply, false);
     }
 }

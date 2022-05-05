@@ -69,4 +69,6 @@ public class Server extends Thread {
 
         return nextReady;
     }
+
+    public int getMessageHolderCount() { return messageHolders.size(); }
 }
