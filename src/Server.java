@@ -4,6 +4,7 @@ import java.net.Socket;
 import java.util.ArrayList;
 
 public class Server extends Thread {
+    public final static String ACK = "ACK";
     private ServerSocket server;
     private boolean running;
     private volatile ArrayList<MessageHolder> messageHolders;
