@@ -2,19 +2,19 @@ import java.util.ArrayList;
 import java.util.HashMap;
 
 public class Node {
-    String name;
-    HashMap<String, Block> blockChain;
-    Block longestChain;
+    private String name;
+    private HashMap<String, Block> blockChain;
+    private Block longestChainHead;
 
     public Node(String name) {
         this.name = name;
-        longestChain = null;
+        this.longestChainHead = null;
     }
 
     private void addBlock(Block block) {
-        blockChain.put(block.getHash(), block);
-        if (longestChain == null || block.getNumber() > longestChain.getNumber()) {
-            longestChain = block;
+        this.blockChain.put(block.getHash(), block);
+        if (this.longestChainHead == null || block.getNumber() > this.longestChainHead.getNumber()) {
+            this.longestChainHead = block;
         }
     }
 
@@ -27,15 +27,16 @@ public class Node {
         //TODO: go through each transaction from each block and make sure no one runs out of money
     }
 
+    //TODO: use a stack instead
     private ArrayList<Block> findChain(ArrayList<Block> chain) {
         Block lastBlock = chain.get(chain.size() - 1);
-        String previous = lastBlock.getPrevious();
+        String hashForPrevious = lastBlock.getPrevious();
 
-        if (previous.equals("0000000000")) { //TODO: what is the hash value for the first block?
+        if (hashForPrevious.equals("0000000000")) { //TODO: what is the hash value for the first block?
             return chain;
         }
         else {
-            chain.add(blockChain.get(previous));
+            chain.add(blockChain.get(hashForPrevious));
             return findChain(chain);
         }
     }
