@@ -34,7 +34,7 @@ public class Node {
         while (true) {
             //do stuff
 
-            if (testing && ((System.nanoTime() - lastTest) / 1000000) >= 5000) { //run test block every 5 seconds if in testing mode
+            if (testing && ((System.nanoTime() - lastTest) / 1000000) >= 5000) { //run test code every 5 seconds if in testing mode
                 doTests();
                 lastTest = System.nanoTime();
                 System.out.println(">>>>" + server.getMessageHolderCount() + " message holders, " + openClients.size() + " open clients" + "<<<<");
