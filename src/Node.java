@@ -1,4 +1,3 @@
-import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -37,7 +36,7 @@ public class Node {
                 Block newBlock;
 
                 if (longestChainHead == null) {
-                    newBlock = new Block(1, this.name, "0000000000"); //TODO: what is hash value of first block?
+                    newBlock = new Block(1, this.name, Block.FIRST_HASH);
                 } else {
                     newBlock = new Block(this.longestChainHead.getNumber() + 1, this.name, this.longestChainHead.getPrevious());
                     //TODO: populate block with transactions
@@ -162,7 +161,7 @@ public class Node {
         Block lastBlock = chain.peek();
         String hashForPrevious = lastBlock.getPrevious();
 
-        if (hashForPrevious.equals("0000000000")) { //TODO: what is the hash value for the first block?
+        if (hashForPrevious.equals(Block.FIRST_HASH)) { //TODO: what is the hash value for the first block?
             return chain;
         }
         else {

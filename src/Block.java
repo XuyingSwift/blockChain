@@ -1,4 +1,5 @@
 public class Block {
+    public static final String FIRST_HASH = "0".repeat(64);
     private int number;
     private long nonce;
     private Coinbase coinbase;
