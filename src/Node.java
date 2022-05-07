@@ -1,6 +1,10 @@
+import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.*;
 
 public class Node {
@@ -66,6 +70,11 @@ public class Node {
 
             if (blockMiner.getBlockState().equals(BlockMiner.READY)) {
                 addBlock(blockMiner.getBlock());
+                try {
+                    writeToDisk();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
                 //TODO: send block to other nodes
                 blockMiner = new BlockMiner();
             }
@@ -274,5 +283,15 @@ public class Node {
 
         Message reply = new Message(this.name, message.getSender(), Message.REPLY_TYPE, replyJson.toString());
         sendMessage(reply.getDestination(), reply, false);
+    }
+
+    private void writeToDisk() throws IOException {
+        JsonObject diskInfo = new JsonObject();
+        diskInfo.addProperty("node_name", this.name);
+        diskInfo.addProperty("block_chain", this.blockChain.toString());
+        String fileName = "Node_" + this.name + "_blackChain.json";
+        BufferedWriter writer = new BufferedWriter(new FileWriter(fileName));
+        writer.write(diskInfo.toString());
+        writer.close();
     }
 }
