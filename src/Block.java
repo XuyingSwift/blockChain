@@ -6,6 +6,7 @@ public class Block {
     private String previous, hash;
     private final int coinbaseAmount = 100;
     private final int maxTransactions = 5;
+    private boolean keepMining;
 
     public Block(int number, String coinbasePerson, String previous) {
         this.number = number;
@@ -15,18 +16,25 @@ public class Block {
     }
 
     public void mineBlock(String validPrefix) {
-        /* TODO:
-         * -pick a new nonce
-         * -hash everything together
-         *      -number
-         *      -nonce
-         *      -coinbase
-         *      -transactions
-         *      -previous
-         * -check if the hash starts with validPrefix
-         * -this method will finish once it finds a nonce and valid hash
-         */
+        keepMining = true;
+        this.hash = null;
+
+        while (keepMining && (this.hash == null || !this.hash.startsWith(validPrefix))) {
+            /* TODO:
+             * -pick a new nonce
+             * -hash everything together
+             *      -number
+             *      -nonce
+             *      -coinbase
+             *      -transactions
+             *      -previous
+             * -check if the hash starts with validPrefix
+             * -this method will finish once it finds a nonce and valid hash
+             */
+        }
     }
+
+    public void stopMining() { this.keepMining = false; }
 
     public int getNumber() {
         return number;

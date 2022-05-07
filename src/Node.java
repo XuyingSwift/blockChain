@@ -12,6 +12,7 @@ public class Node {
     private Server server;
     private HashMap<UUID, Message> awaitingReplies;
     private ArrayList<Client> openClients;
+    private BlockMiner blockMiner;
 
     public Node(String name, int port, HashMap<String, RemoteNode> remoteNodes) {
         this.name = name;
@@ -21,6 +22,7 @@ public class Node {
         this.awaitingReplies = new HashMap<>();
         this.openClients = new ArrayList<>();
         this.server = new Server(port);
+        this.blockMiner = new BlockMiner();
     }
 
     public void run() {
@@ -29,7 +31,21 @@ public class Node {
         long lastTest = System.nanoTime();
 
         while (true) {
-            //do stuff
+            //if not already mining a block, make a new one and start mining
+            if (blockMiner.getBlock() == null) {
+                Block newBlock;
+
+                if (longestChainHead == null) {
+                    newBlock = new Block(1, this.name, "0000000000"); //TODO: what is hash value of first block?
+                } else {
+                    newBlock = new Block(this.longestChainHead.getNumber() + 1, this.name, this.longestChainHead.getPrevious());
+                    //TODO: populate block with transactions
+                }
+
+                System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Generated block " + newBlock.getNumber() + " with previous block " + newBlock.getPrevious() + Colors.ANSI_RESET);
+                blockMiner.setBlock(newBlock);
+                blockMiner.start();
+            }
 
             if (testing && ((System.nanoTime() - lastTest) / 1000000) >= 5000) { //run test code every 5 seconds if in testing mode
                 doTests();
@@ -43,7 +59,11 @@ public class Node {
                 nextHolder = server.getNextReadyHolder();
             }
 
-            //do stuff
+            if (blockMiner.getBlockState().equals(BlockMiner.READY)) {
+                addBlock(blockMiner.getBlock());
+                //TODO: send block to other nodes
+                blockMiner.clearBlock();
+            }
 
             cleanClients();
 
@@ -52,9 +72,17 @@ public class Node {
     }
 
     private void addBlock(Block block) {
-        this.blockChain.put(block.getHash(), block);
-        if (this.longestChainHead == null || block.getNumber() > this.longestChainHead.getNumber()) {
-            this.longestChainHead = block;
+        if (verifyBlock(block)) {
+            System.out.println(Colors.ANSI_YELLOW + "Node (" + Thread.currentThread().getName() + "): Adding new block " + block.getNumber() + " with previous block " + block.getPrevious() + Colors.ANSI_RESET);
+            this.blockChain.put(block.getHash(), block);
+
+            if (this.longestChainHead == null || block.getNumber() > this.longestChainHead.getNumber()) {
+                System.out.println(Colors.ANSI_YELLOW + "Node (" + Thread.currentThread().getName() + "): Updated head of my longest chain to block " + block.getNumber() + Colors.ANSI_RESET);
+                this.longestChainHead = block;
+            }
+        }
+        else {
+            System.out.println(Colors.ANSI_RED + "Node (" + Thread.currentThread().getName() + "): New block " + block.getNumber() + " with previous block " + block.getPrevious() + " was not valid; rejecting!" + Colors.ANSI_RESET);
         }
     }
 
