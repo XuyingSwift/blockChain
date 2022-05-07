@@ -1,10 +1,7 @@
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Random;
-import java.util.UUID;
+import java.util.*;
 
 public class Node {
     private boolean testing = true;
@@ -61,25 +58,86 @@ public class Node {
         }
     }
 
-    private void verifyBlock(Block block) {
-        ArrayList<Block> startChain = new ArrayList<>();
-        startChain.add(block);
-        ArrayList<Block> totalChain = findChain(startChain);
+    private HashMap<String, Integer> computeChainState(Block lastBlock) {
+        Stack<Block> totalChain = findChain(lastBlock);
+        HashMap<String, Integer> chainState = new HashMap<>();
 
-        //TODO: reverse the list totalChain (or work through it backwards)
-        //TODO: go through each transaction from each block and make sure no one runs out of money
+        while (!totalChain.empty()) {
+            Block curBlock = totalChain.pop();
+
+            String miner = curBlock.getCoinbase().getPerson();
+            if (!chainState.containsKey(miner)) {
+                chainState.put(miner, 0);
+            }
+            chainState.put(miner, chainState.get(miner) + curBlock.getCoinbase().getAmount());
+
+            for (Transaction curTxn : curBlock.getTransactions()) {
+                String from = curTxn.getFrom(), to = curTxn.getTo();
+
+                if (!chainState.containsKey(from)) {
+                    chainState.put(from, 0);
+                }
+                if (!chainState.containsKey(to)) {
+                    chainState.put(to, 0);
+                }
+
+                chainState.put(from, chainState.get(from) - curTxn.getAmount());
+                chainState.put(to, chainState.get(to) + curTxn.getAmount());
+            }
+        }
+
+        return chainState;
     }
 
-    //TODO: use a stack instead
-    private ArrayList<Block> findChain(ArrayList<Block> chain) {
-        Block lastBlock = chain.get(chain.size() - 1);
+    private boolean verifyBlock(Block block) {
+        Stack<Block> totalChain = findChain(block);
+        boolean isValid = true;
+        HashMap<String, Integer> chainState = new HashMap<>();
+
+        while (!totalChain.isEmpty() && isValid) {
+            Block curBlock = totalChain.pop();
+
+            String miner = curBlock.getCoinbase().getPerson();
+            if (!chainState.containsKey(miner)) {
+                chainState.put(miner, 0);
+            }
+            chainState.put(miner, chainState.get(miner) + curBlock.getCoinbase().getAmount());
+
+            for (Transaction curTxn : curBlock.getTransactions()) {
+                String from = curTxn.getFrom(), to = curTxn.getTo();
+
+                if (!chainState.containsKey(from)) {
+                    chainState.put(from, 0);
+                }
+                if (!chainState.containsKey(to)) {
+                    chainState.put(to, 0);
+                }
+
+                chainState.put(from, chainState.get(from) - curTxn.getAmount());
+                //This means that someone was "DOUBLE SPENDING" and ran out of money, so it's not a valid block
+                if (chainState.get(from) < 0) isValid = false;
+                chainState.put(to, chainState.get(to) + curTxn.getAmount());
+            }
+        }
+
+        return isValid;
+    }
+
+    private Stack<Block> findChain(Block startBlock) {
+        Stack<Block> chain = new Stack<>();
+        chain.push(startBlock);
+        return findChain(chain);
+    }
+
+    private Stack<Block> findChain(Stack<Block> chain) {
+        Block lastBlock = chain.peek();
         String hashForPrevious = lastBlock.getPrevious();
 
         if (hashForPrevious.equals("0000000000")) { //TODO: what is the hash value for the first block?
             return chain;
         }
         else {
-            chain.add(blockChain.get(hashForPrevious));
+            chain.push(blockChain.get(hashForPrevious));
             return findChain(chain);
         }
     }

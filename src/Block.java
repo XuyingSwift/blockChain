@@ -10,7 +10,7 @@ public class Block {
     public Block(int number, String coinbasePerson, String previous) {
         this.number = number;
         this.coinbase = new Coinbase(coinbasePerson, coinbaseAmount);
-        transactions = new Transaction[maxTransactions];
+        this.transactions = new Transaction[maxTransactions];
         this.previous = previous;
     }
 
@@ -31,6 +31,8 @@ public class Block {
     public int getNumber() {
         return number;
     }
+
+    public Coinbase getCoinbase() { return coinbase; }
 
     public Transaction[] getTransactions() {
         return transactions;

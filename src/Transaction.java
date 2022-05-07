@@ -1,6 +1,6 @@
 public class Transaction {
-    String from, to;
-    int amount;
+    private String from, to;
+    private int amount;
 
     public Transaction(String from, String to, int amount) {
         this.from = from;
