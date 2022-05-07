@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 public class Block {
+    public static final String FIRST_HASH = "0".repeat(64);
     private int number;
     private long nonce;
     private Coinbase coinbase;
@@ -11,11 +12,12 @@ public class Block {
     private String previous, hash;
     private final int coinbaseAmount = 100;
     private final int maxTransactions = 5;
+    private boolean keepMining;
 
     public Block(int number, String coinbasePerson, String previous) {
         this.number = number;
         this.coinbase = new Coinbase(coinbasePerson, coinbaseAmount);
-        transactions = new Transaction[maxTransactions];
+        this.transactions = new Transaction[maxTransactions];
         this.previous = previous;
     }
 
@@ -50,9 +52,13 @@ public class Block {
         return sha256hex;
     }
 
+    public void stopMining() { this.keepMining = false; }
+
     public int getNumber() {
         return number;
     }
+
+    public Coinbase getCoinbase() { return coinbase; }
 
     public Transaction[] getTransactions() {
         return transactions;

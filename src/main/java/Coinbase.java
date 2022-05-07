@@ -1,6 +1,6 @@
 public class Coinbase {
-    String person;
-    int amount;
+    private String person;
+    private int amount;
 
     public Coinbase(String person, int amount) {
         this.person = person;
