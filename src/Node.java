@@ -22,13 +22,13 @@ public class Node {
         this.awaitingReplies = new HashMap<>();
         this.openClients = new ArrayList<>();
         this.server = new Server(port);
-        this.blockMiner = new BlockMiner();
     }
 
     public void run() {
         this.server.start();
         MessageHolder nextHolder;
         long lastTest = System.nanoTime();
+        this.blockMiner = new BlockMiner();
 
         while (true) {
             //if not already mining a block, make a new one and start mining
@@ -39,8 +39,12 @@ public class Node {
                     newBlock = new Block(1, this.name, Block.FIRST_HASH);
                 } else {
                     newBlock = new Block(this.longestChainHead.getNumber() + 1, this.name, this.longestChainHead.getHash());
-                    GenerateTransaction transactionGenerator = new GenerateTransaction(computeChainState(longestChainHead));
-                    newBlock.setTransactions(transactionGenerator.generateTransaction());
+                    HashMap<String, Integer> chainState = computeChainState(longestChainHead);
+                    System.out.println("State: " + chainState.toString());
+                    GenerateTransaction transactionGenerator = new GenerateTransaction(chainState);
+                    Transaction[] newTrans = transactionGenerator.generateTransaction();
+                    newBlock.setTransactions(newTrans);
+                    System.out.println("Transactions: " + Arrays.toString(newTrans));
                 }
 
                 System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Generated block " + newBlock.getNumber() + " with previous block " + newBlock.getPrevious() + Colors.ANSI_RESET);
@@ -63,7 +67,7 @@ public class Node {
             if (blockMiner.getBlockState().equals(BlockMiner.READY)) {
                 addBlock(blockMiner.getBlock());
                 //TODO: send block to other nodes
-                blockMiner.clearBlock();
+                blockMiner = new BlockMiner();
             }
 
             cleanClients();
@@ -101,17 +105,19 @@ public class Node {
             chainState.put(miner, chainState.get(miner) + curBlock.getCoinbase().getAmount());
 
             for (Transaction curTxn : curBlock.getTransactions()) {
-                String from = curTxn.getFrom(), to = curTxn.getTo();
+                if (curTxn != null) {
+                    String from = curTxn.getFrom(), to = curTxn.getTo();
 
-                if (!chainState.containsKey(from)) {
-                    chainState.put(from, 0);
-                }
-                if (!chainState.containsKey(to)) {
-                    chainState.put(to, 0);
-                }
+                    if (!chainState.containsKey(from)) {
+                        chainState.put(from, 0);
+                    }
+                    if (!chainState.containsKey(to)) {
+                        chainState.put(to, 0);
+                    }
 
-                chainState.put(from, chainState.get(from) - curTxn.getAmount());
-                chainState.put(to, chainState.get(to) + curTxn.getAmount());
+                    chainState.put(from, chainState.get(from) - curTxn.getAmount());
+                    chainState.put(to, chainState.get(to) + curTxn.getAmount());
+                }
             }
         }
 
@@ -133,19 +139,21 @@ public class Node {
             chainState.put(miner, chainState.get(miner) + curBlock.getCoinbase().getAmount());
 
             for (Transaction curTxn : curBlock.getTransactions()) {
-                String from = curTxn.getFrom(), to = curTxn.getTo();
+                if (curTxn != null) {
+                    String from = curTxn.getFrom(), to = curTxn.getTo();
 
-                if (!chainState.containsKey(from)) {
-                    chainState.put(from, 0);
-                }
-                if (!chainState.containsKey(to)) {
-                    chainState.put(to, 0);
-                }
+                    if (!chainState.containsKey(from)) {
+                        chainState.put(from, 0);
+                    }
+                    if (!chainState.containsKey(to)) {
+                        chainState.put(to, 0);
+                    }
 
-                chainState.put(from, chainState.get(from) - curTxn.getAmount());
-                //This means that someone was "DOUBLE SPENDING" and ran out of money, so it's not a valid block
-                if (chainState.get(from) < 0) isValid = false;
-                chainState.put(to, chainState.get(to) + curTxn.getAmount());
+                    chainState.put(from, chainState.get(from) - curTxn.getAmount());
+                    //This means that someone was "DOUBLE SPENDING" and ran out of money, so it's not a valid block
+                    if (chainState.get(from) < 0) isValid = false;
+                    chainState.put(to, chainState.get(to) + curTxn.getAmount());
+                }
             }
         }
 

@@ -2,9 +2,10 @@ public class BlockMiner extends Thread{
     public static final String WAITING = "WAITING", READY = "READY";
     private volatile Block block;
     private volatile String blockState;
-    private final String hashPrefix = "000";
+    private final String hashPrefix = "0000";
 
     public BlockMiner() {
+        this.blockState = WAITING;
         this.block = null;
     }
 
@@ -14,22 +15,12 @@ public class BlockMiner extends Thread{
             System.out.println(Colors.ANSI_CYAN + "BlockMiner (" + Thread.currentThread().getName() + "): Mining block " + block.getNumber() + Colors.ANSI_RESET);
             this.block.mineBlock(hashPrefix);
 
-            if (!currentThread().isInterrupted()) { //indicates block was successfully mined
-                this.blockState = READY;
-                System.out.println(Colors.ANSI_YELLOW + "BlockMiner (" + Thread.currentThread().getName() + "): Finished mining block " + block.getNumber() + Colors.ANSI_RESET);
-            }
-            else { //indicates we stopped mining early (we should discard this block)
-                clearBlock();
-            }
+            this.blockState = READY;
+            System.out.println(Colors.ANSI_YELLOW + "BlockMiner (" + Thread.currentThread().getName() + "): Finished mining block " + block.getNumber() + Colors.ANSI_RESET);
         }
         else {
             System.out.println(Colors.ANSI_RED + "ERROR BlockMiner (" + Thread.currentThread().getName() + "): cannot mine NULL block");
         }
-    }
-
-    public void interrupt() {
-        this.block.stopMining();
-        super.interrupt();
     }
 
     public void setBlock(Block block) { this.block = block; }

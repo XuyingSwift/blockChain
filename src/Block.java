@@ -18,6 +18,7 @@ public class Block {
         this.number = number;
         this.coinbase = new Coinbase(coinbasePerson, coinbaseAmount);
         this.previous = previous;
+        this.transactions = new Transaction[0];
     }
 
     public void mineBlock(String validPrefix) {
@@ -36,15 +37,15 @@ public class Block {
         this.hash = null;
 
         StringBuilder data = new StringBuilder();
-        data.append(String.valueOf(this.number));
+        data.append(this.number);
         data.append(this.coinbase.toString());
         data.append(Arrays.toString(this.transactions));
         data.append(this.previous);
 
-        while (keepMining || (this.hash == null || !this.hash.startsWith(validPrefix))) {
+        while (keepMining && (this.hash == null || !this.hash.startsWith(validPrefix))) {
             this.nonce++;
             StringBuilder finalData = new StringBuilder();
-            finalData.append(data.toString());
+            finalData.append(data);
             finalData.append(this.nonce);
             this.hash = hashBlock(finalData.toString());
         }

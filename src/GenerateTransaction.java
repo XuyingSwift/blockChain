@@ -6,6 +6,9 @@ public class GenerateTransaction {
 
     public GenerateTransaction(HashMap<String, Integer> transactions) {
         this.transactions = transactions;
+        if (!(transactions.containsKey("xuying"))) { transactions.put("xuying", 0); }
+        if (!(transactions.containsKey("omar"))) { transactions.put("omar", 0); }
+        if (!(transactions.containsKey("hattie"))) { transactions.put("hattie", 0); }
     }
 
     public HashMap<String, Integer> getTransactions() {
@@ -27,7 +30,7 @@ public class GenerateTransaction {
 
             Iterator txIterator = this.transactions.entrySet().iterator();
             int index = 0;
-            while (txIterator.hasNext()) {
+            while (txIterator.hasNext() && index < transactionList.length) {
                 Map.Entry current = (Map.Entry) txIterator.next();
                 Transaction trx = new Transaction(nodeName, (String) current.getKey(), (int) (nodeValue*(10.0f/100.0f)));
                 transactionList[index] = trx;
