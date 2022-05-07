@@ -29,12 +29,13 @@ public class GenerateTransaction {
 
         if (nodeValue > 0) {
             this.transactions.remove(nodeName);
+            int multiplier = random.nextInt(5) + 1;
 
             Iterator txIterator = this.transactions.entrySet().iterator();
             int index = 0;
             while (txIterator.hasNext() && index < transactionList.length) {
                 Map.Entry current = (Map.Entry) txIterator.next();
-                Transaction trx = new Transaction(nodeName, (String) current.getKey(), (int) (nodeValue*(10.0f/100.0f)));
+                Transaction trx = new Transaction(nodeName, (String) current.getKey(), (int) (multiplier*nodeValue*(10.0f/100.0f)));
                 transactionList[index] = trx;
                 index++;
             }
