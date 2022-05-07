@@ -17,7 +17,7 @@ public class BlockMiner extends Thread{
 
             if (!this.isInterrupted()) {
                 this.blockState = READY;
-                System.out.println(Colors.ANSI_YELLOW + "BlockMiner (" + Thread.currentThread().getName() + "): Finished mining block " + block.getNumber() + "[..." + block.getHash().substring(57) + "]" + Colors.ANSI_RESET);
+                System.out.println(Colors.ANSI_YELLOW + "BlockMiner (" + Thread.currentThread().getName() + "): Finished mining block " + block.getNumber() + " [..." + block.getHash().substring(57) + "]" + Colors.ANSI_RESET);
             }
             else {
                 clearBlock();

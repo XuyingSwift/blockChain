@@ -41,11 +41,11 @@ public class Node {
                 } else {
                     newBlock = new Block(this.longestChainHead.getNumber() + 1, this.name, this.longestChainHead.getHash());
                     HashMap<String, Integer> chainState = computeChainState(longestChainHead);
-                    System.out.println("State: " + chainState.toString());
+                    System.out.println("    Starting state of next block " + newBlock.getNumber() + ": " + chainState.toString());
                     GenerateTransaction transactionGenerator = new GenerateTransaction(chainState);
                     Transaction[] newTrans = transactionGenerator.generateTransaction();
                     newBlock.setTransactions(newTrans);
-                    System.out.println("Transactions: " + Arrays.toString(newTrans));
+                    System.out.println("    Transactions for next block " + newBlock.getNumber() + ": " + Arrays.toString(newTrans));
                 }
 
                 System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Generated block " + newBlock.getNumber() + " with previous block ..." + newBlock.getPrevious().substring(57) + Colors.ANSI_RESET);
@@ -89,7 +89,7 @@ public class Node {
             }
         }
         else {
-            System.out.println(Colors.ANSI_RED + "Node (" + Thread.currentThread().getName() + "): New block " + block.getNumber() + " with previous block ..." + block.getPrevious().substring(57) + " was not valid; rejecting!" + Colors.ANSI_RESET);
+            System.out.println(Colors.ANSI_RED + "Node (" + Thread.currentThread().getName() + "): New block " + block.getNumber() + " [..." + block.getHash().substring(57) + "] with previous block ..." + block.getPrevious().substring(57) + " was not valid; rejecting!" + Colors.ANSI_RESET);
         }
     }
 
