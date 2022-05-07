@@ -33,15 +33,21 @@ public class Block {
          * -check if the hash starts with validPrefix
          * -this method will finish once it finds a nonce and valid hash
          */
+        keepMining = true;
+        this.hash = null;
+
         StringBuilder data = new StringBuilder();
         data.append(String.valueOf(this.number));
         data.append(this.coinbase.toString());
         data.append(Arrays.toString(this.transactions));
         data.append(this.previous);
 
-        while (!this.hash.substring(0, validPrefix.length()).equals(validPrefix)) {
+        while (keepMining || (this.hash == null || !this.hash.startsWith(validPrefix))) {
             this.nonce++;
-            this.hash = hashBlock(data.toString());
+            StringBuilder finalData = new StringBuilder();
+            finalData.append(data.toString());
+            finalData.append(this.nonce.toString());
+            this.hash = hashBlock(finalData.toString());
         }
     }
 
