@@ -45,7 +45,7 @@ public class Block {
             this.nonce++;
             StringBuilder finalData = new StringBuilder();
             finalData.append(data.toString());
-            finalData.append(this.nonce.toString());
+            finalData.append(this.nonce);
             this.hash = hashBlock(finalData.toString());
         }
     }

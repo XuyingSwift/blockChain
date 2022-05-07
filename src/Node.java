@@ -39,8 +39,8 @@ public class Node {
                     newBlock = new Block(1, this.name, Block.FIRST_HASH);
                 } else {
                     newBlock = new Block(this.longestChainHead.getNumber() + 1, this.name, this.longestChainHead.getHash());
-                    GenerateTransactions transactionGenerator = new GenerateTransactions(computeChainState(longestChainHead));
-                    newBlock.setTransactions(transactionGenerator.generateTransactions());
+                    GenerateTransaction transactionGenerator = new GenerateTransaction(computeChainState(longestChainHead));
+                    newBlock.setTransactions(transactionGenerator.generateTransaction());
                 }
 
                 System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Generated block " + newBlock.getNumber() + " with previous block " + newBlock.getPrevious() + Colors.ANSI_RESET);
