@@ -1,10 +1,11 @@
+import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import java.util.*;
 
 public class Node {
-    private boolean testing = true;
+    private boolean testing = false;
     private String name;
     private HashMap<String, Block> blockChain;
     private HashMap<String, RemoteNode> remoteNodes;
