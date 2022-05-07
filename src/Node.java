@@ -38,8 +38,9 @@ public class Node {
                 if (longestChainHead == null) {
                     newBlock = new Block(1, this.name, Block.FIRST_HASH);
                 } else {
-                    newBlock = new Block(this.longestChainHead.getNumber() + 1, this.name, this.longestChainHead.getPrevious());
-                    //TODO: populate block with transactions
+                    newBlock = new Block(this.longestChainHead.getNumber() + 1, this.name, this.longestChainHead.getHash());
+                    GenerateTransactions transactionGenerator = new GenerateTransactions(computeChainState(longestChainHead));
+                    newBlock.setTransactions(transactionGenerator.generateTransactions());
                 }
 
                 System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Generated block " + newBlock.getNumber() + " with previous block " + newBlock.getPrevious() + Colors.ANSI_RESET);
