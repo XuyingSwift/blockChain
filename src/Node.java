@@ -1,3 +1,4 @@
+import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -47,7 +48,7 @@ public class Node {
                     System.out.println("Transactions: " + Arrays.toString(newTrans));
                 }
 
-                System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Generated block " + newBlock.getNumber() + " with previous block " + newBlock.getPrevious() + Colors.ANSI_RESET);
+                System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Generated block " + newBlock.getNumber() + " with previous block ..." + newBlock.getPrevious().substring(57) + Colors.ANSI_RESET);
                 blockMiner.setBlock(newBlock);
                 blockMiner.start();
             }
@@ -65,35 +66,38 @@ public class Node {
             }
 
             if (blockMiner.getBlockState().equals(BlockMiner.READY)) {
-                addBlock(blockMiner.getBlock());
-                //TODO: send block to other nodes
+                Block myNewBlock = blockMiner.getBlock();
+                addBlock(myNewBlock);
+                broadcastBlock(myNewBlock);
                 blockMiner = new BlockMiner();
             }
 
             cleanClients();
-
-            //do stuff
         }
     }
 
     private void addBlock(Block block) {
         if (verifyBlock(block)) {
-            System.out.println(Colors.ANSI_YELLOW + "Node (" + Thread.currentThread().getName() + "): Adding new block " + block.getNumber() + " with previous block " + block.getPrevious() + Colors.ANSI_RESET);
+            System.out.println(Colors.ANSI_BLUE + "Node (" + Thread.currentThread().getName() + "): Adding new block " + block.getNumber() + " [..." + block.getHash().substring(57) + "] with previous block ..." + block.getPrevious().substring(57) + Colors.ANSI_RESET);
             this.blockChain.put(block.getHash(), block);
 
             if (this.longestChainHead == null || block.getNumber() > this.longestChainHead.getNumber()) {
-                System.out.println(Colors.ANSI_YELLOW + "Node (" + Thread.currentThread().getName() + "): Updated head of my longest chain to block " + block.getNumber() + Colors.ANSI_RESET);
+                System.out.println(Colors.ANSI_YELLOW + "Node (" + Thread.currentThread().getName() + "): Updated head of my longest chain to block " + block.getNumber() + " [..." + block.getHash().substring(57) + "]" + Colors.ANSI_RESET);
                 this.longestChainHead = block;
+                blockMiner.interrupt();
+                blockMiner = new BlockMiner();
             }
         }
         else {
-            System.out.println(Colors.ANSI_RED + "Node (" + Thread.currentThread().getName() + "): New block " + block.getNumber() + " with previous block " + block.getPrevious() + " was not valid; rejecting!" + Colors.ANSI_RESET);
+            System.out.println(Colors.ANSI_RED + "Node (" + Thread.currentThread().getName() + "): New block " + block.getNumber() + " with previous block ..." + block.getPrevious().substring(57) + " was not valid; rejecting!" + Colors.ANSI_RESET);
         }
     }
 
     private HashMap<String, Integer> computeChainState(Block lastBlock) {
         Stack<Block> totalChain = findChain(lastBlock);
         HashMap<String, Integer> chainState = new HashMap<>();
+
+        for (String curPerson : remoteNodes.keySet()) chainState.put(curPerson, 0);
 
         while (!totalChain.empty()) {
             Block curBlock = totalChain.pop();
@@ -170,7 +174,7 @@ public class Node {
         Block lastBlock = chain.peek();
         String hashForPrevious = lastBlock.getPrevious();
 
-        if (hashForPrevious.equals(Block.FIRST_HASH)) { //TODO: what is the hash value for the first block?
+        if (hashForPrevious.equals(Block.FIRST_HASH)) {
             return chain;
         }
         else {
@@ -185,6 +189,22 @@ public class Node {
         Client client = new Client(this.remoteNodes.get(dest).getAddress(), this.remoteNodes.get(dest).getPort(), message);
         client.start();
         this.openClients.add(client);
+    }
+
+    private void broadcastBlock(Block block) {
+        Gson gson = new Gson();
+        String blockJson = gson.toJson(block);
+
+        for (String remote : remoteNodes.keySet()) {
+            if (!remote.equals(this.name)) {
+                Message blockMessage = new Message(this.name, remote, Message.BLOCK_TYPE, blockJson);
+
+                System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Sending block message [" + blockMessage.getGuid() + "] to node " + remote + Colors.ANSI_RESET);
+                System.out.println(Colors.ANSI_CYAN + "     " + blockMessage.getPayload() + Colors.ANSI_RESET);
+
+                sendMessage(remote, blockMessage, false);
+            }
+        }
     }
 
     private void deliverMessage(Message message) {
@@ -212,7 +232,15 @@ public class Node {
         else if (message.getType().equals(Message.TEST_TYPE)) {
             processTestMessage(message);
         }
-        //TODO: more processing for other message types
+        else if (message.getType().equals(Message.BLOCK_TYPE)) {
+            processBlockMessage(message);
+        }
+    }
+
+    private void processBlockMessage(Message message) {
+        Gson gson = new Gson();
+        Block newBlock = gson.fromJson(message.getPayload(), Block.class);
+        addBlock(newBlock);
     }
 
     private void cleanClients() {

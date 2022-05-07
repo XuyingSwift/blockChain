@@ -6,9 +6,6 @@ public class GenerateTransaction {
 
     public GenerateTransaction(HashMap<String, Integer> transactions) {
         this.transactions = transactions;
-        if (!(transactions.containsKey("xuying"))) { transactions.put("xuying", 0); }
-        if (!(transactions.containsKey("omar"))) { transactions.put("omar", 0); }
-        if (!(transactions.containsKey("hattie"))) { transactions.put("hattie", 0); }
     }
 
     public HashMap<String, Integer> getTransactions() {
@@ -24,6 +21,11 @@ public class GenerateTransaction {
         String[] nodes = this.transactions.keySet().toArray(new String[0]);
         String nodeName = randomNode(nodes);
         int nodeValue = this.transactions.get(nodeName);
+
+        while (nodeValue <= 0) {
+            nodeName = randomNode(nodes);
+            nodeValue = this.transactions.get(nodeName);
+        }
 
         if (nodeValue > 0) {
             this.transactions.remove(nodeName);
