@@ -315,7 +315,8 @@ public class Node {
     private void writeToDisk() throws IOException {
         JsonObject diskInfo = new JsonObject();
         diskInfo.addProperty("node_name", this.name);
-        diskInfo.addProperty("block_chain", this.blockChain.toString());
+        Gson gson = new Gson();
+        diskInfo.addProperty("block_chain", gson.toJson(blockChain));
         String fileName = "Node_" + this.name + "_blackChain.json";
         BufferedWriter writer = new BufferedWriter(new FileWriter(fileName));
         writer.write(diskInfo.toString());
