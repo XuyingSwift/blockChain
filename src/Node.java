@@ -86,7 +86,7 @@ public class Node {
 
     private void addBlock(Block block) {
         if (verifyBlock(block)) {
-            System.out.println(Colors.ANSI_BLUE + "Node (" + Thread.currentThread().getName() + "): Adding new block " + block.getNumber() + " [..." + block.getHash().substring(57) + "] with previous block ..." + block.getPrevious().substring(57) + Colors.ANSI_RESET);
+            System.out.println(Colors.ANSI_YELLOW + "Node (" + Thread.currentThread().getName() + "): Adding new block " + block.getNumber() + " [..." + block.getHash().substring(57) + "] with previous block ..." + block.getPrevious().substring(57) + Colors.ANSI_RESET);
             this.blockChain.put(block.getHash(), block);
 
             if (this.longestChainHead == null || block.getNumber() > this.longestChainHead.getNumber()) {

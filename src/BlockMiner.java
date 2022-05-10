@@ -12,12 +12,12 @@ public class BlockMiner extends Thread{
     public void run() {
         this.blockState = WAITING;
         if (this.block != null) {
-            System.out.println(Colors.ANSI_CYAN + "BlockMiner (" + Thread.currentThread().getName() + "): Mining block " + block.getNumber() + Colors.ANSI_RESET);
+            System.out.println(Colors.ANSI_BLUE + "BlockMiner (" + Thread.currentThread().getName() + "): Mining block " + block.getNumber() + Colors.ANSI_RESET);
             this.block.mineBlock(hashPrefix);
 
             if (!this.isInterrupted()) {
                 this.blockState = READY;
-                System.out.println(Colors.ANSI_YELLOW + "BlockMiner (" + Thread.currentThread().getName() + "): Finished mining block " + block.getNumber() + " [..." + block.getHash().substring(57) + "]" + Colors.ANSI_RESET);
+                System.out.println(Colors.ANSI_BLUE + "BlockMiner (" + Thread.currentThread().getName() + "): Finished mining block " + block.getNumber() + " [..." + block.getHash().substring(57) + "]" + Colors.ANSI_RESET);
             }
             else {
                 clearBlock();
