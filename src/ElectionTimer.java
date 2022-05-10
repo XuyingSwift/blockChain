@@ -2,7 +2,7 @@ import java.util.Random;
 
 public class ElectionTimer extends Thread{
     volatile private int timeout;
-    private final int MIN_TIMEOUT = 150 * 10, MAX_TIMEOUT = 300 * 10;
+    private final int MIN_TIMEOUT = 150 * NodeRunner.STAKE_SLOW_FACTOR, MAX_TIMEOUT = 300 * NodeRunner.STAKE_SLOW_FACTOR;
     volatile private boolean expired;
 
     public ElectionTimer() {

@@ -4,6 +4,8 @@ import java.io.InputStreamReader;
 import java.util.HashMap;
 
 public class NodeRunner {
+    public static final int STAKE_SLOW_FACTOR = 20;
+
     public static void main(String[] args) {
         //config string format: "myName myName 127.0.0.1 5000 remote_1 127.0.0.1 5001 remote_2 127.0.0.1 5002", ...
         String myName = args[0];

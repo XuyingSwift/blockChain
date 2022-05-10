@@ -14,7 +14,9 @@ public class StakeNode {
             LAST_BLOCK_INDEX = "lastBlockIndex", LAST_BLOCK_TERM = "lastBlockTerm";
     //field names for heartbeat message
     public static final String LEADER_TERM = "leaderTerm", LEADER_ID = "leaderId";
-    private final int HEARTBEAT_TIME = 100 * 10, BLOCK_PERIOD = 15000, MAJORITY;
+    //field names for block messages
+    public static final String BLOCK_ELE = "block", BLOCK_META_ELE = "blockMeta";
+    private final int HEARTBEAT_TIME = 50 * NodeRunner.STAKE_SLOW_FACTOR, BLOCK_PERIOD = 750 * NodeRunner.STAKE_SLOW_FACTOR, MAJORITY;
     private String name;
     private HashMap<String, Block> blockChain;
     private HashMap<String, RemoteNode> remoteNodes;
@@ -25,13 +27,18 @@ public class StakeNode {
     private ElectionTimer timer;
     private Integer voteCount, term, commitIndex;
     private String state, votedFor, currentLeader;
-    private HashMap<Integer, Integer> blockTerms;
+    private HashMap<String, BlockMeta> blockMeta;
     private long blockPeriodStart;
+    private Block blockToVerify;
+    private BlockMeta toVerifyMeta;
+    private int verifyCount;
 
     public StakeNode(String name, int port, HashMap<String, RemoteNode> remoteNodes) {
         this.name = name;
         this.blockChain = new HashMap<>();
         this.longestChainHead = null;
+        this.blockToVerify = null;
+        this.toVerifyMeta = null;
         this.remoteNodes = remoteNodes;
         this.awaitingReplies = new HashMap<>();
         this.openClients = new ArrayList<>();
@@ -44,7 +51,7 @@ public class StakeNode {
         this.state = FOLLOW;
         this.currentLeader = null;
         this.votedFor = null;
-        this.blockTerms = new HashMap<>();
+        this.blockMeta = new HashMap<>();
     }
 
     public void run() {
@@ -56,10 +63,19 @@ public class StakeNode {
         while (true) {
             if (this.state.equals(CANDID) && this.voteCount >= MAJORITY) {
                 becomeLeader();
-                //TODO: make a new block
+
+                //if we already had a block to verify since the last time we were a leader, double check whether it's valid
+                //if it's not a valid block, discard it and start a new one; otherwise, keep waiting on it
+                if (this.blockToVerify != null && !verifyBlock(blockToVerify)) {
+                    System.out.println(Colors.ANSI_RED + "StakeNode (" + Thread.currentThread().getName() + "): Block " + blockToVerify.getNumber() + " [..." + blockToVerify.getHash().substring(57) + "] with previous block ..." + blockToVerify.getPrevious().substring(57) + " did not get signatures and was invalid; discarding" + Colors.ANSI_RESET);
+                    blockToVerify = null;
+                    toVerifyMeta = null;
+                }
+
+                if (this.blockToVerify == null) createNextBlock();
             }
 
-            if (state.equals(LEADER) && ((System.nanoTime() - lastHeartbeat) / 1000000) >= HEARTBEAT_TIME)
+            if (this.state.equals(LEADER) && ((System.nanoTime() - lastHeartbeat) / 1000000) >= HEARTBEAT_TIME)
             {
                 sendHeartbeat();
                 lastHeartbeat = System.nanoTime();
@@ -68,10 +84,18 @@ public class StakeNode {
             nextHolder = this.server.getNextReadyHolder();
             while (nextHolder != null) {
                 deliverMessage(nextHolder.getMessage());
-                nextHolder = server.getNextReadyHolder();
+                nextHolder = this.server.getNextReadyHolder();
             }
 
-            if (((System.nanoTime() - blockPeriodStart) / 1000000) >= BLOCK_PERIOD && this.state.equals(LEADER)) {
+            //TODO: this is not how verification actually works
+            if (blockToVerify != null && this.verifyCount >= 2) {
+                addBlock(blockToVerify, toVerifyMeta);
+                sendAddBlock(blockToVerify, toVerifyMeta);
+                blockToVerify = null;
+                toVerifyMeta = null;
+            }
+
+            if (((System.nanoTime() - this.blockPeriodStart) / 1000000) >= BLOCK_PERIOD && this.state.equals(LEADER)) {
                 System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): current block period has expired... " + Colors.ANSI_RESET);
                 this.timer.reset();
                 //stop sending heartbeats and allow timers to expire if it's time to make another block
@@ -117,26 +141,137 @@ public class StakeNode {
         }
     }
 
-    /*private void broadcastBlock(Block block) {
+    private void createNextBlock() {
+        Block newBlock;
+
+        if (longestChainHead == null) {
+            newBlock = new Block(1, this.name, Block.FIRST_HASH);
+        } else {
+            newBlock = new Block(this.longestChainHead.getNumber() + 1, this.name, this.longestChainHead.getHash());
+            HashMap<String, Integer> chainState = computeChainState(longestChainHead);
+            System.out.println("    Starting state of next block " + newBlock.getNumber() + ": " + chainState.toString());
+            GenerateTransaction transactionGenerator = new GenerateTransaction(chainState);
+            Transaction[] newTrans = transactionGenerator.generateTransaction();
+            newBlock.setTransactions(newTrans);
+            System.out.println("    Transactions for next block " + newBlock.getNumber() + ": " + Arrays.toString(newTrans));
+        }
+
+        System.out.println(Colors.ANSI_CYAN + "StakeNode (" + Thread.currentThread().getName() + "): Generated block " + newBlock.getNumber() + " with previous block ..." + newBlock.getPrevious().substring(57) + Colors.ANSI_RESET);
+
+        newBlock.mineBlock(""); //empty prefix will accept first hash generated for block
+        this.blockToVerify = newBlock;
+        this.verifyCount = 0;
+        this.toVerifyMeta = new BlockMeta(this.term, this.name);
+        sendVerifyBlock(newBlock);
+    }
+
+    private void sendVerifyBlock(Block block) {
         Gson gson = new Gson();
-        String blockJson = gson.toJson(block);
+        JsonObject verifyInfo = new JsonObject();
+
+        verifyInfo.addProperty(LEADER_TERM, this.term);
+        verifyInfo.addProperty(LEADER_ID, this.name);
+        verifyInfo.add(BLOCK_ELE, gson.toJsonTree(block));
 
         for (String remote : remoteNodes.keySet()) {
             if (!remote.equals(this.name)) {
-                Message blockMessage = new Message(this.name, remote, Message.BLOCK_TYPE, blockJson);
+                Message blockMessage = new Message(this.name, remote, Message.BLOCK_VERIFY_TYPE, verifyInfo.toString());
 
-                System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Sending block message [" + blockMessage.getGuid() + "] to node " + remote + Colors.ANSI_RESET);
+                System.out.println(Colors.ANSI_CYAN + "StakeNode (" + Thread.currentThread().getName() + "): Sending block verify message [" + blockMessage.getGuid() + "] to node " + remote + Colors.ANSI_RESET);
+                System.out.println(Colors.ANSI_CYAN + "     " + blockMessage.getPayload() + Colors.ANSI_RESET);
+
+                sendMessage(remote, blockMessage, true);
+            }
+        }
+    }
+
+    private void processVerifyBlockMessage(Message message) {
+        JsonObject responseJson = new JsonObject();
+        JsonObject payloadJson = new JsonParser().parse(message.getPayload()).getAsJsonObject();
+
+        Gson gson = new Gson();
+        Block newBlock = gson.fromJson(payloadJson.get(BLOCK_ELE), Block.class);
+
+        if (payloadJson.get(LEADER_TERM).getAsInt() >= this.term) {
+            this.timer.reset();
+            this.currentLeader = message.getSender();
+
+            if (!this.state.equals(FOLLOW)) {
+                System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): switching to follower, new term " + payloadJson.get(LEADER_TERM).getAsInt() + " from node " + message.getSender() + " greater than my term " + this.term + Colors.ANSI_RESET);
+                this.state = FOLLOW;
+            }
+
+            if (payloadJson.get(LEADER_TERM).getAsInt() > this.term) {
+                this.term = payloadJson.get(LEADER_TERM).getAsInt();
+                this.votedFor = null;
+            }
+        }
+
+        if (verifyBlock(newBlock)) {
+            responseJson.addProperty("result", true);
+        }
+        else {
+            System.out.println(Colors.ANSI_RED + "StakeNode (" + Thread.currentThread().getName() + "): New block " + newBlock.getNumber() + " [..." + newBlock.getHash().substring(57) + "] with previous block ..." + newBlock.getPrevious().substring(57) + " was not valid; rejecting!" + Colors.ANSI_RESET);
+            responseJson.addProperty("result", false);
+        }
+
+        responseJson.addProperty("originalMessageId", message.getGuid().toString());
+        responseJson.addProperty("verifiedBlock", newBlock.getHash());
+        Message response = new Message(this.name, message.getSender(), Message.REPLY_TYPE, responseJson.toString());
+        sendMessage(message.getSender(), response, false);
+    }
+
+    private void processVerifyBlockReply(Message message) {
+        JsonObject replyJson = new JsonParser().parse(message.getPayload()).getAsJsonObject();
+        if (replyJson.get("result").getAsBoolean() && replyJson.get("verifiedBlock").getAsString().equals(this.blockToVerify.getHash())) {
+            this.verifyCount++;
+        }
+    }
+
+    private void sendAddBlock(Block block, BlockMeta blockMeta) {
+        Gson gson = new Gson();
+        JsonObject blockInfo = new JsonObject();
+
+        blockInfo.addProperty(LEADER_TERM, this.term);
+        blockInfo.addProperty(LEADER_ID, this.name);
+        blockInfo.add(BLOCK_ELE, gson.toJsonTree(block));
+        blockInfo.add(BLOCK_META_ELE, gson.toJsonTree(blockMeta));
+
+        for (String remote : remoteNodes.keySet()) {
+            if (!remote.equals(this.name)) {
+                Message blockMessage = new Message(this.name, remote, Message.BLOCK_TYPE, blockInfo.toString());
+
+                System.out.println(Colors.ANSI_CYAN + "StakeNode (" + Thread.currentThread().getName() + "): Sending block message [" + blockMessage.getGuid() + "] to node " + remote + Colors.ANSI_RESET);
                 System.out.println(Colors.ANSI_CYAN + "     " + blockMessage.getPayload() + Colors.ANSI_RESET);
 
                 sendMessage(remote, blockMessage, false);
             }
         }
-    }*/
+    }
 
-    private void processBlockMessage(Message message) {
+    private void processAddBlockMessage(Message message) {
+        JsonObject payloadJson = new JsonParser().parse(message.getPayload()).getAsJsonObject();
+
         Gson gson = new Gson();
-        Block newBlock = gson.fromJson(message.getPayload(), Block.class);
-        //addBlock(newBlock);
+        Block newBlock = gson.fromJson(payloadJson.get(BLOCK_ELE), Block.class);
+        BlockMeta newMeta = gson.fromJson(payloadJson.get(BLOCK_META_ELE), BlockMeta.class);
+
+        if (payloadJson.get(LEADER_TERM).getAsInt() >= this.term) {
+            this.timer.reset();
+            this.currentLeader = message.getSender();
+
+            if (!this.state.equals(FOLLOW)) {
+                System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): switching to follower, new term " + payloadJson.get(LEADER_TERM).getAsInt() + " from node " + message.getSender() + " greater than my term " + this.term + Colors.ANSI_RESET);
+                this.state = FOLLOW;
+            }
+
+            if (payloadJson.get(LEADER_TERM).getAsInt() > this.term) {
+                this.term = payloadJson.get(LEADER_TERM).getAsInt();
+                this.votedFor = null;
+            }
+        }
+
+        addBlock(newBlock, newMeta);
     }
 
     private void sendHeartbeat() {
@@ -157,15 +292,16 @@ public class StakeNode {
         if (payloadJson.get(LEADER_TERM).getAsInt() >= this.term) {
             this.timer.reset();
             this.currentLeader = message.getSender();
-        }
 
-        if (payloadJson.get(LEADER_TERM).getAsInt() > term) {
-            if (!state.equals(FOLLOW)) {
-                System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): switching to follower, new term " + payloadJson.get(LEADER_TERM).getAsInt() + " from node " + message.getSender() + " greater than my term " + term + Colors.ANSI_RESET);
+            if (!this.state.equals(FOLLOW)) {
+                System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): switching to follower, new term " + payloadJson.get(LEADER_TERM).getAsInt() + " from node " + message.getSender() + " greater than my term " + this.term + Colors.ANSI_RESET);
+                this.state = FOLLOW;
             }
-            state = FOLLOW;
-            term = payloadJson.get(LEADER_TERM).getAsInt();
-            votedFor = null;
+
+            if (payloadJson.get(LEADER_TERM).getAsInt() > this.term) {
+                this.term = payloadJson.get(LEADER_TERM).getAsInt();
+                this.votedFor = null;
+            }
         }
     }
 
@@ -179,8 +315,8 @@ public class StakeNode {
         //last index of candidate's log
         voteInfo.addProperty(LAST_BLOCK_INDEX, longestChainHead == null ? 0 : longestChainHead.getNumber());
         //term of candidates last log entry
-        if (longestChainHead != null && blockTerms.containsKey(longestChainHead.getNumber())) {
-            voteInfo.addProperty(LAST_BLOCK_TERM, blockTerms.get(longestChainHead.getNumber()));
+        if (longestChainHead != null && blockMeta.containsKey(longestChainHead.getHash())) {
+            voteInfo.addProperty(LAST_BLOCK_TERM, blockMeta.get(longestChainHead.getHash()).getCreateTerm());
         }
         else {
             voteInfo.addProperty(LAST_BLOCK_TERM, (Integer) null);
@@ -223,10 +359,10 @@ public class StakeNode {
                 logIsUpToDate = false; //Candidate has no logs, but I do
             }
             else { //me and the candidate both have logs
-                if (payloadJson.get(LAST_BLOCK_TERM).getAsInt() > blockTerms.get(longestChainHead.getNumber())) {
+                if (payloadJson.get(LAST_BLOCK_TERM).getAsInt() > blockMeta.get(longestChainHead.getHash()).getCreateTerm()) {
                     logIsUpToDate = true;
                 }
-                else if (payloadJson.get(LAST_BLOCK_TERM).getAsInt() < blockTerms.get(longestChainHead.getNumber())) {
+                else if (payloadJson.get(LAST_BLOCK_TERM).getAsInt() < blockMeta.get(longestChainHead.getHash()).getCreateTerm()) {
                     logIsUpToDate = false;
                 }
                 else { //terms are equal - whose log is longer?
@@ -255,7 +391,7 @@ public class StakeNode {
     private void processReqVoteReply(Message message) {
         JsonObject replyJson = new JsonParser().parse(message.getPayload()).getAsJsonObject();
         if (replyJson.get("result").getAsBoolean() && replyJson.get("voteTerm").getAsInt() == this.term) {
-            voteCount++;
+            this.voteCount++;
         }
     }
 
@@ -268,7 +404,7 @@ public class StakeNode {
     }
 
     private void deliverMessage(Message message) {
-        System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Delivering " + message.getType() + " message [" + message.getGuid() + "] from node " + message.getSender() + Colors.ANSI_RESET);
+        System.out.println(Colors.ANSI_CYAN + "StakeNode (" + Thread.currentThread().getName() + "): Delivering " + message.getType() + " message [" + message.getGuid() + "] from node " + message.getSender() + Colors.ANSI_RESET);
         System.out.println(Colors.ANSI_CYAN + "     " + message.getPayload() + Colors.ANSI_RESET);
 
         if (message.getType().equals(Message.REPLY_TYPE)) {
@@ -278,15 +414,14 @@ public class StakeNode {
             Message origMessage = awaitingReplies.get(origId);
             awaitingReplies.remove(origId);
 
-            System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Received reply for message [" + origMessage.getGuid() + "] to node " + origMessage.getDestination() + ", processing" + Colors.ANSI_RESET);
+            System.out.println(Colors.ANSI_CYAN + "StakeNode (" + Thread.currentThread().getName() + "): Received reply for message [" + origMessage.getGuid() + "] to node " + origMessage.getDestination() + ", processing" + Colors.ANSI_RESET);
             //TODO: more processing based on type of original message and contents of reply
-            //if (origMessage.getType().equals(Message.TEST_TYPE))
             if (origMessage.getType().equals(Message.REQ_VOTE_TYPE)) {
                 processReqVoteReply(message);
             }
-        }
-        else if (message.getType().equals(Message.BLOCK_TYPE)) {
-            processBlockMessage(message);
+            else if (origMessage.getType().equals(Message.BLOCK_VERIFY_TYPE)) {
+                processVerifyBlockReply(message);
+            }
         }
         else if (message.getType().equals(Message.REQ_VOTE_TYPE)) {
             processReqVoteMessage(message);
@@ -294,23 +429,22 @@ public class StakeNode {
         else if (message.getType().equals(Message.HEARTBEAT_TYPE)) {
             processHeartbeatMessage(message);
         }
+        else if (message.getType().equals(Message.BLOCK_VERIFY_TYPE)) {
+            processVerifyBlockMessage(message);
+        }
+        else if (message.getType().equals(Message.BLOCK_TYPE)) {
+            processAddBlockMessage(message);
+        }
     }
 
-    /*
-    private void addBlock(Block block) {
-        if (verifyBlock(block)) {
-            System.out.println(Colors.ANSI_YELLOW + "Node (" + Thread.currentThread().getName() + "): Adding new block " + block.getNumber() + " [..." + block.getHash().substring(57) + "] with previous block ..." + block.getPrevious().substring(57) + Colors.ANSI_RESET);
-            this.blockChain.put(block.getHash(), block);
+    private void addBlock(Block block, BlockMeta blockMeta) {
+        System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): Adding new block " + block.getNumber() + " [..." + block.getHash().substring(57) + "] with previous block ..." + block.getPrevious().substring(57) + Colors.ANSI_RESET);
+        this.blockChain.put(block.getHash(), block);
+        this.blockMeta.put(block.getHash(), blockMeta);
 
-            if (this.longestChainHead == null || block.getNumber() > this.longestChainHead.getNumber()) {
-                System.out.println(Colors.ANSI_YELLOW + "Node (" + Thread.currentThread().getName() + "): Updated head of my longest chain to block " + block.getNumber() + " [..." + block.getHash().substring(57) + "]" + Colors.ANSI_RESET);
-                this.longestChainHead = block;
-                blockMiner.interrupt();
-                blockMiner = new BlockMiner();
-            }
-        }
-        else {
-            System.out.println(Colors.ANSI_RED + "Node (" + Thread.currentThread().getName() + "): New block " + block.getNumber() + " [..." + block.getHash().substring(57) + "] with previous block ..." + block.getPrevious().substring(57) + " was not valid; rejecting!" + Colors.ANSI_RESET);
+        if (this.longestChainHead == null || block.getNumber() > this.longestChainHead.getNumber()) {
+            System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): Updated head of my longest chain to block " + block.getNumber() + " [..." + block.getHash().substring(57) + "]" + Colors.ANSI_RESET);
+            this.longestChainHead = block;
         }
     }
 
@@ -403,18 +537,17 @@ public class StakeNode {
             return findChain(chain);
         }
     }
-    */
 
     private void cleanClients() {
         ArrayList<Client> removeList = new ArrayList<>();
 
         for (Client curClient : openClients) {
             if (curClient.getMessageState().equals(Client.DONE)) {
-                System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Client for message [" + curClient.getMessage().getGuid() + "] to node " + curClient.getMessage().getDestination() + " is done, cleaning up" + Colors.ANSI_RESET);
+                System.out.println(Colors.ANSI_CYAN + "StakeNode (" + Thread.currentThread().getName() + "): Client for message [" + curClient.getMessage().getGuid() + "] to node " + curClient.getMessage().getDestination() + " is done, cleaning up" + Colors.ANSI_RESET);
                 removeList.add(curClient);
             }
             else if (curClient.getMessageState().equals(Client.EXCEPTION)) {
-                System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Client for message [" + curClient.getMessage().getGuid() + "] to node " + curClient.getMessage().getDestination() + " errored, cleaning up" + Colors.ANSI_RESET);
+                System.out.println(Colors.ANSI_CYAN + "StakeNode (" + Thread.currentThread().getName() + "): Client for message [" + curClient.getMessage().getGuid() + "] to node " + curClient.getMessage().getDestination() + " errored, cleaning up" + Colors.ANSI_RESET);
                 awaitingReplies.remove(curClient.getMessage().getGuid());
                 removeList.add(curClient);
             }
