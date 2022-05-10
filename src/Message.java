@@ -1,7 +1,7 @@
 import java.util.UUID;
 
 public class Message {
-    public static final String REPLY_TYPE = "REPLY", BLOCK_TYPE = "BLOCK", TEST_TYPE = "TEST";
+    public static final String REPLY_TYPE = "REPLY", BLOCK_TYPE = "BLOCK", TEST_TYPE = "TEST", REQ_VOTE_TYPE = "REQ_VOTE";
     private String type, payload;
     private String sender, destination;
     private UUID guid;
