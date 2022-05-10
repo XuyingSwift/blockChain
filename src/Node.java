@@ -1,26 +1,31 @@
-import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
 import java.util.*;
 
 public class Node {
     private boolean testing = false;
     private String name;
     private HashMap<String, Block> blockChain;
+    private HashMap<String, StakeBlock> stakeBlockChain;
     private HashMap<String, RemoteNode> remoteNodes;
     private Block longestChainHead;
     private Server server;
     private HashMap<UUID, Message> awaitingReplies;
     private ArrayList<Client> openClients;
     private BlockMiner blockMiner;
-
+    private KeyGenerator keyGenerator;
     public Node(String name, int port, HashMap<String, RemoteNode> remoteNodes) {
         this.name = name;
         this.blockChain = new HashMap<>();
+        this.stakeBlockChain = new HashMap<>();
         this.longestChainHead = null;
         this.remoteNodes = remoteNodes;
         this.awaitingReplies = new HashMap<>();
@@ -100,6 +105,16 @@ public class Node {
         }
     }
 
+    private void generateKeys() {
+        try {
+            this.keyGenerator = new KeyGenerator(1024);
+            this.keyGenerator.createKeys();
+            this.keyGenerator.writeToDisk("KeyPair/publicKey", this.keyGenerator.getPublicKey().getEncoded());
+            this.keyGenerator.writeToDisk("KeyPair/privateKey", this.keyGenerator.getPrivateKey().getEncoded());
+        } catch (NoSuchAlgorithmException | NoSuchProviderException e) {
+            System.err.println(e.getMessage());
+        }
+    }
     private HashMap<String, Integer> computeChainState(Block lastBlock) {
         Stack<Block> totalChain = findChain(lastBlock);
         HashMap<String, Integer> chainState = new HashMap<>();
@@ -131,6 +146,42 @@ public class Node {
         }
 
         return chainState;
+    }
+
+    public boolean verifyStakeBlock(StakeBlock stakeBlock) {
+        Stack<StakeBlock> totalChain = findStakeBlockChain(stakeBlock) ;
+        boolean isValid = true;
+        HashMap<String, Integer> chainState = new HashMap<>();
+
+        while (!totalChain.isEmpty() && isValid) {
+            StakeBlock curBlock = totalChain.pop();
+
+            String miner = curBlock.getStakePerson().getStake_person();
+            if (!chainState.containsKey(miner)) {
+                chainState.put(miner, 0);
+            }
+            chainState.put(miner, chainState.get(miner) + curBlock.getStakePerson().getStake_amount());
+
+            for (Transaction curTxn : curBlock.getTransactions()) {
+                if (curTxn != null) {
+                    String from = curTxn.getFrom(), to = curTxn.getTo();
+
+                    if (!chainState.containsKey(from)) {
+                        chainState.put(from, 0);
+                    }
+                    if (!chainState.containsKey(to)) {
+                        chainState.put(to, 0);
+                    }
+
+                    chainState.put(from, chainState.get(from) - curTxn.getAmount());
+                    //This means that someone was "DOUBLE SPENDING" and ran out of money, so it's not a valid block
+                    if (chainState.get(from) < 0) isValid = false;
+                    chainState.put(to, chainState.get(to) + curTxn.getAmount());
+                }
+            }
+        }
+
+        return isValid;
     }
 
     private boolean verifyBlock(Block block) {
@@ -173,6 +224,25 @@ public class Node {
         Stack<Block> chain = new Stack<>();
         chain.push(startBlock);
         return findChain(chain);
+    }
+
+    private Stack<StakeBlock> findStakeBlockChain(StakeBlock startBlock) {
+        Stack<StakeBlock> chain = new Stack<StakeBlock>();
+        chain.push(startBlock);
+        return findStakeBlockChain(chain);
+    }
+
+    private Stack<StakeBlock> findStakeBlockChain(Stack<StakeBlock> chain) {
+        StakeBlock lastBlock = chain.peek();
+        String hashForPrevious = lastBlock.getPrevious();
+
+        if (hashForPrevious.equals(StakeBlock.FIRST_HASH)) { //TODO: what is the hash value for the first block?
+            return chain;
+        }
+        else {
+            chain.push(stakeBlockChain.get(hashForPrevious));
+            return findStakeBlockChain(chain);
+        }
     }
 
     private Stack<Block> findChain(Stack<Block> chain) {
