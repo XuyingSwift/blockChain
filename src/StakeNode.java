@@ -1,4 +1,5 @@
 import com.google.gson.*;
+import com.google.gson.reflect.TypeToken;
 
 import java.io.BufferedWriter;
 import java.io.FileWriter;
@@ -11,7 +12,9 @@ public class StakeNode {
     //field names for request vote message
     public static final String CANDIDATE_ID = "candidateId", CANDIDATE_TERM = "candidateTerm",
             LAST_BLOCK_INDEX = "lastBlockIndex", LAST_BLOCK_TERM = "lastBlockTerm";
-    private final int HEARTBEAT_TIME = 50 * 100, MAJORITY;
+    //field names for heartbeat message
+    public static final String LEADER_TERM = "leaderTerm", LEADER_ID = "leaderId";
+    private final int HEARTBEAT_TIME = 100 * 10, BLOCK_PERIOD = 15000, MAJORITY;
     private String name;
     private HashMap<String, Block> blockChain;
     private HashMap<String, RemoteNode> remoteNodes;
@@ -20,9 +23,10 @@ public class StakeNode {
     private HashMap<UUID, Message> awaitingReplies;
     private ArrayList<Client> openClients;
     private ElectionTimer timer;
-    private Integer voteCount, term, commitIndex, currentLeader;
-    private String state, votedFor;
+    private Integer voteCount, term, commitIndex;
+    private String state, votedFor, currentLeader;
     private HashMap<Integer, Integer> blockTerms;
+    private long blockPeriodStart;
 
     public StakeNode(String name, int port, HashMap<String, RemoteNode> remoteNodes) {
         this.name = name;
@@ -34,7 +38,7 @@ public class StakeNode {
         this.server = new Server(port);
 
         this.timer = new ElectionTimer();
-        this.MAJORITY = (int) Math.ceil(remoteNodes.size() / 2.0);
+        this.MAJORITY = (int) Math.ceil(remoteNodes.size() / 2.0) + (remoteNodes.size() % 2 == 0 ? 1 : 0);
         this.term = 0;
         this.voteCount = 0;
         this.state = FOLLOW;
@@ -45,6 +49,7 @@ public class StakeNode {
 
     public void run() {
         this.server.start();
+        this.timer.start();
         MessageHolder nextHolder;
         long lastHeartbeat = System.nanoTime();
 
@@ -54,18 +59,25 @@ public class StakeNode {
                 //TODO: make a new block
             }
 
-            if (this.state.equals(LEADER) && ((System.nanoTime() - lastHeartbeat) / 1000000) >= HEARTBEAT_TIME) {
+            if (state.equals(LEADER) && ((System.nanoTime() - lastHeartbeat) / 1000000) >= HEARTBEAT_TIME)
+            {
                 sendHeartbeat();
                 lastHeartbeat = System.nanoTime();
             }
 
-            nextHolder = server.getNextReadyHolder();
+            nextHolder = this.server.getNextReadyHolder();
             while (nextHolder != null) {
                 deliverMessage(nextHolder.getMessage());
                 nextHolder = server.getNextReadyHolder();
             }
 
-            if (timer.isExpired() && !state.equals(LEADER)) startElection();
+            if (((System.nanoTime() - blockPeriodStart) / 1000000) >= BLOCK_PERIOD && this.state.equals(LEADER)) {
+                System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): current block period has expired... " + Colors.ANSI_RESET);
+                this.timer.reset();
+                //stop sending heartbeats and allow timers to expire if it's time to make another block
+                this.state = FOLLOW;
+            }
+            if (this.timer.isExpired() && !this.state.equals(LEADER)) startElection();
 
             cleanClients();
         }
@@ -73,21 +85,87 @@ public class StakeNode {
 
     private void startElection() {
         // switch to candidate state
-        state = CANDID;
+        this.state = CANDID;
         // increment its term
-        term++;
-        System.out.println(Colors.ANSI_YELLOW + "RaftNode (" + Thread.currentThread().getName() + "): became candidate in term " + term + Colors.ANSI_RESET);
+        this.term++;
+        System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): became candidate in term " + term + Colors.ANSI_RESET);
         //start with vote for self
-        voteCount = 1;
+        this.voteCount = 1;
         // set voted for to the candidate id
-        votedFor = name;
+        this.votedFor = name;
         // reset the term timer
-        timer.reset();
+        this.timer.reset();
 
         //send a requestVote to all other nodes
+        for (String remoteNode : this.remoteNodes.keySet()) {
+            if (remoteNode.equals(this.name)) continue;
+            sendRequestVote(remoteNode);
+        }
+    }
+
+    private void becomeLeader() {
+        if (this.state.equals(CANDID)) {
+            this.state = LEADER;
+            this.currentLeader = this.name;
+
+            System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): became the leader in term " + term + "!!" + Colors.ANSI_RESET);
+            blockPeriodStart = System.nanoTime();
+            sendHeartbeat();
+        }
+        else {
+            System.out.println(Colors.ANSI_CYAN + "StakeNode (" + Thread.currentThread().getName() + "): was trying to become leader but found a new leader" + Colors.ANSI_RESET);
+        }
+    }
+
+    /*private void broadcastBlock(Block block) {
+        Gson gson = new Gson();
+        String blockJson = gson.toJson(block);
+
+        for (String remote : remoteNodes.keySet()) {
+            if (!remote.equals(this.name)) {
+                Message blockMessage = new Message(this.name, remote, Message.BLOCK_TYPE, blockJson);
+
+                System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Sending block message [" + blockMessage.getGuid() + "] to node " + remote + Colors.ANSI_RESET);
+                System.out.println(Colors.ANSI_CYAN + "     " + blockMessage.getPayload() + Colors.ANSI_RESET);
+
+                sendMessage(remote, blockMessage, false);
+            }
+        }
+    }*/
+
+    private void processBlockMessage(Message message) {
+        Gson gson = new Gson();
+        Block newBlock = gson.fromJson(message.getPayload(), Block.class);
+        //addBlock(newBlock);
+    }
+
+    private void sendHeartbeat() {
+        JsonObject heartbeatInfo = new JsonObject();
+        heartbeatInfo.addProperty(LEADER_TERM, this.term);
+        heartbeatInfo.addProperty(LEADER_ID, this.name);
+
         for (String remoteNode : remoteNodes.keySet()) {
             if (remoteNode.equals(name)) continue;
-            sendRequestVote(remoteNode);
+            Message message = new Message(this.name, remoteNode, Message.HEARTBEAT_TYPE, heartbeatInfo.toString());
+            sendMessage(remoteNode, message, false);
+        }
+    }
+
+    private void processHeartbeatMessage(Message message) {
+        JsonObject payloadJson = new JsonParser().parse(message.getPayload()).getAsJsonObject();
+
+        if (payloadJson.get(LEADER_TERM).getAsInt() >= this.term) {
+            this.timer.reset();
+            this.currentLeader = message.getSender();
+        }
+
+        if (payloadJson.get(LEADER_TERM).getAsInt() > term) {
+            if (!state.equals(FOLLOW)) {
+                System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): switching to follower, new term " + payloadJson.get(LEADER_TERM).getAsInt() + " from node " + message.getSender() + " greater than my term " + term + Colors.ANSI_RESET);
+            }
+            state = FOLLOW;
+            term = payloadJson.get(LEADER_TERM).getAsInt();
+            votedFor = null;
         }
     }
 
@@ -119,15 +197,26 @@ public class StakeNode {
         JsonObject responseJson = new JsonObject();
         JsonObject payloadJson = new JsonParser().parse(message.getPayload()).getAsJsonObject();
 
+        if (payloadJson.get(CANDIDATE_TERM).getAsInt() > term) {
+            this.timer.reset();
+
+            if (!this.state.equals(FOLLOW)) {
+                System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): switching to follower, new term " + payloadJson.get(CANDIDATE_TERM).getAsInt() + " from node " + message.getSender() + " greater than my term " + term + Colors.ANSI_RESET);
+            }
+            this.state = FOLLOW;
+            this.term = payloadJson.get(CANDIDATE_TERM).getAsInt();
+            this.votedFor = null;
+        }
+
         //if the sending node's term is at least as high as my term
         //and either I haven't voted yet, or I already voted for this node,
         //maybe grant vote
         if (payloadJson.get(CANDIDATE_TERM).getAsInt() >= this.term
-                && (votedFor == null || votedFor.equals(payloadJson.get(CANDIDATE_ID).getAsString()))) {
+                && (this.votedFor == null || this.votedFor.equals(payloadJson.get(CANDIDATE_ID).getAsString()))) {
 
             boolean logIsUpToDate;
             //check if candidate's log is as up to date as mine
-            if (longestChainHead == null) {
+            if (this.longestChainHead == null) {
                 logIsUpToDate = true; //I have no logs yet
             }
             else if (payloadJson.get(LAST_BLOCK_INDEX).getAsInt() == 0) {
@@ -147,7 +236,7 @@ public class StakeNode {
 
             if (logIsUpToDate) {
                 responseJson.addProperty("result", true);
-                votedFor = payloadJson.get(CANDIDATE_ID).getAsString();
+                this.votedFor = payloadJson.get(CANDIDATE_ID).getAsString();
             }
             else {
                 responseJson.addProperty("result", false);
@@ -170,6 +259,44 @@ public class StakeNode {
         }
     }
 
+    private void sendMessage(String dest, Message message, boolean waitForReply) {
+        if (waitForReply) { this.awaitingReplies.put(message.getGuid(), message); }
+
+        Client client = new Client(this.remoteNodes.get(dest).getAddress(), this.remoteNodes.get(dest).getPort(), message);
+        client.start();
+        this.openClients.add(client);
+    }
+
+    private void deliverMessage(Message message) {
+        System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Delivering " + message.getType() + " message [" + message.getGuid() + "] from node " + message.getSender() + Colors.ANSI_RESET);
+        System.out.println(Colors.ANSI_CYAN + "     " + message.getPayload() + Colors.ANSI_RESET);
+
+        if (message.getType().equals(Message.REPLY_TYPE)) {
+            JsonObject msgJson = new JsonParser().parse(message.getPayload()).getAsJsonObject();
+
+            UUID origId = UUID.fromString(msgJson.get("originalMessageId").getAsString());
+            Message origMessage = awaitingReplies.get(origId);
+            awaitingReplies.remove(origId);
+
+            System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Received reply for message [" + origMessage.getGuid() + "] to node " + origMessage.getDestination() + ", processing" + Colors.ANSI_RESET);
+            //TODO: more processing based on type of original message and contents of reply
+            //if (origMessage.getType().equals(Message.TEST_TYPE))
+            if (origMessage.getType().equals(Message.REQ_VOTE_TYPE)) {
+                processReqVoteReply(message);
+            }
+        }
+        else if (message.getType().equals(Message.BLOCK_TYPE)) {
+            processBlockMessage(message);
+        }
+        else if (message.getType().equals(Message.REQ_VOTE_TYPE)) {
+            processReqVoteMessage(message);
+        }
+        else if (message.getType().equals(Message.HEARTBEAT_TYPE)) {
+            processHeartbeatMessage(message);
+        }
+    }
+
+    /*
     private void addBlock(Block block) {
         if (verifyBlock(block)) {
             System.out.println(Colors.ANSI_YELLOW + "Node (" + Thread.currentThread().getName() + "): Adding new block " + block.getNumber() + " [..." + block.getHash().substring(57) + "] with previous block ..." + block.getPrevious().substring(57) + Colors.ANSI_RESET);
@@ -276,62 +403,7 @@ public class StakeNode {
             return findChain(chain);
         }
     }
-
-    private void sendMessage(String dest, Message message, boolean waitForReply) {
-        if (waitForReply) { this.awaitingReplies.put(message.getGuid(), message); }
-
-        Client client = new Client(this.remoteNodes.get(dest).getAddress(), this.remoteNodes.get(dest).getPort(), message);
-        client.start();
-        this.openClients.add(client);
-    }
-
-    private void broadcastBlock(Block block) {
-        Gson gson = new Gson();
-        String blockJson = gson.toJson(block);
-
-        for (String remote : remoteNodes.keySet()) {
-            if (!remote.equals(this.name)) {
-                Message blockMessage = new Message(this.name, remote, Message.BLOCK_TYPE, blockJson);
-
-                System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Sending block message [" + blockMessage.getGuid() + "] to node " + remote + Colors.ANSI_RESET);
-                System.out.println(Colors.ANSI_CYAN + "     " + blockMessage.getPayload() + Colors.ANSI_RESET);
-
-                sendMessage(remote, blockMessage, false);
-            }
-        }
-    }
-
-    private void deliverMessage(Message message) {
-        System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Delivering " + message.getType() + " message [" + message.getGuid() + "] from node " + message.getSender() + Colors.ANSI_RESET);
-        System.out.println(Colors.ANSI_CYAN + "     " + message.getPayload() + Colors.ANSI_RESET);
-
-        if (message.getType().equals(Message.REPLY_TYPE)) {
-            JsonObject msgJson = new JsonParser().parse(message.getPayload()).getAsJsonObject();
-
-            UUID origId = UUID.fromString(msgJson.get("originalMessageId").getAsString());
-            Message origMessage = awaitingReplies.get(origId);
-            awaitingReplies.remove(origId);
-
-            System.out.println(Colors.ANSI_CYAN + "Node (" + Thread.currentThread().getName() + "): Received reply for message [" + origMessage.getGuid() + "] to node " + origMessage.getDestination() + ", processing" + Colors.ANSI_RESET);
-            //TODO: more processing based on type of original message and contents of reply
-            //if (origMessage.getType().equals(Message.TEST_TYPE))
-            if (origMessage.getType().equals(Message.REQ_VOTE_TYPE)) {
-                processReqVoteReply(message);
-            }
-        }
-        else if (message.getType().equals(Message.BLOCK_TYPE)) {
-            processBlockMessage(message);
-        }
-        else if (message.getType().equals(Message.REQ_VOTE_TYPE)) {
-            processReqVoteMessage(message);
-        }
-    }
-
-    private void processBlockMessage(Message message) {
-        Gson gson = new Gson();
-        Block newBlock = gson.fromJson(message.getPayload(), Block.class);
-        addBlock(newBlock);
-    }
+    */
 
     private void cleanClients() {
         ArrayList<Client> removeList = new ArrayList<>();

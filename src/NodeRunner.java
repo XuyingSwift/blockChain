@@ -11,7 +11,7 @@ public class NodeRunner {
         System.out.println(myName);
         int port = remoteNodes.get(myName).getPort();
 
-        Node node = new Node(myName, port, remoteNodes);
+        StakeNode node = new StakeNode(myName, port, remoteNodes);
 
         BufferedReader input = new BufferedReader(new InputStreamReader(System.in));
         System.out.println("Press <enter> to continue...");
