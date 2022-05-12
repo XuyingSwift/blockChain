@@ -41,7 +41,7 @@ public class Node {
             e.printStackTrace();
         }
         try {
-            this.encryptDecrypt = new EncryptDecrypt();
+            this.encryptDecrypt = new EncryptDecrypt(keyGenerator.getPublicKey(), keyGenerator.getPrivateKey());
         } catch (NoSuchAlgorithmException e) {
             e.printStackTrace();
         } catch (NoSuchPaddingException e) {
