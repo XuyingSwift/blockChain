@@ -12,43 +12,13 @@ import java.security.spec.PKCS8EncodedKeySpec;
 
 public class EncryptDecrypt {
     private Cipher cipher;
+    private PublicKey publicKey;
+    private PrivateKey privateKey;
 
-    public EncryptDecrypt() throws NoSuchAlgorithmException, NoSuchPaddingException {
+    public EncryptDecrypt(PublicKey publicKey,PrivateKey privateKey ) throws NoSuchAlgorithmException, NoSuchPaddingException {
         this.cipher = Cipher.getInstance("RSA");
-    }
-
-    public PublicKey getPublicKey(String name) {
-        PublicKey publicKey = null;
-        try {
-            byte[] bytes = Files.readAllBytes(new File(name).toPath());
-            PKCS8EncodedKeySpec spec =  new PKCS8EncodedKeySpec(bytes);
-            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            publicKey = keyFactory.generatePublic(spec);
-        } catch (IOException e) {
-            e.printStackTrace();
-        } catch (NoSuchAlgorithmException e) {
-            e.printStackTrace();
-        } catch (InvalidKeySpecException e) {
-            e.printStackTrace();
-        }
-        return publicKey;
-    }
-
-    public PrivateKey getPrivateKey(String name) {
-        PrivateKey privateKey = null;
-        try {
-            byte[] bytes = Files.readAllBytes(new File(name).toPath());
-            PKCS8EncodedKeySpec spec =  new PKCS8EncodedKeySpec(bytes);
-            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            privateKey = keyFactory.generatePrivate(spec);
-        } catch (IOException e) {
-            e.printStackTrace();
-        } catch (NoSuchAlgorithmException e) {
-            e.printStackTrace();
-        } catch (InvalidKeySpecException e) {
-            e.printStackTrace();
-        }
-        return privateKey;
+        this.publicKey = null;
+        this.privateKey = null;
     }
 
     public String encryptMessage(String msg, PrivateKey key) {

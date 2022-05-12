@@ -26,6 +26,7 @@ public class StakeBlock {
     private String previous;
     private String hash;
     private StakePerson stakePerson;
+    private int stake;
 
     public StakeBlock(int number, Transaction[] transactions, String signature, String finalSignature, String stakePerson, int stakeAmount) {
         this.number = number;
@@ -36,6 +37,19 @@ public class StakeBlock {
         this.hash = null;
         this.previous = null;
         this.stakePerson = new StakePerson(stakePerson, stakeAmount);
+        this.stake = 0;
+    }
+
+    public void setStakePerson(StakePerson stakePerson) {
+        this.stakePerson = stakePerson;
+    }
+
+    public int getStake() {
+        return stake;
+    }
+
+    public void setStake(int stake) {
+        this.stake = stake;
     }
 
     public void getBlockData() {
