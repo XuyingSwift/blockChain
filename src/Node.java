@@ -143,42 +143,6 @@ public class Node {
         return chainState;
     }
 
-    public boolean verifyStakeBlock(StakeBlock stakeBlock) {
-        Stack<StakeBlock> totalChain = findStakeBlockChain(stakeBlock) ;
-        boolean isValid = true;
-        HashMap<String, Integer> chainState = new HashMap<>();
-
-        while (!totalChain.isEmpty() && isValid) {
-            StakeBlock curBlock = totalChain.pop();
-
-            String miner = curBlock.getStakePerson().getStake_person();
-            if (!chainState.containsKey(miner)) {
-                chainState.put(miner, 0);
-            }
-            chainState.put(miner, chainState.get(miner) + curBlock.getStakePerson().getStake_amount());
-
-            for (Transaction curTxn : curBlock.getTransactions()) {
-                if (curTxn != null) {
-                    String from = curTxn.getFrom(), to = curTxn.getTo();
-
-                    if (!chainState.containsKey(from)) {
-                        chainState.put(from, 0);
-                    }
-                    if (!chainState.containsKey(to)) {
-                        chainState.put(to, 0);
-                    }
-
-                    chainState.put(from, chainState.get(from) - curTxn.getAmount());
-                    //This means that someone was "DOUBLE SPENDING" and ran out of money, so it's not a valid block
-                    if (chainState.get(from) < 0) isValid = false;
-                    chainState.put(to, chainState.get(to) + curTxn.getAmount());
-                }
-            }
-        }
-
-        return isValid;
-    }
-
     private boolean verifyBlock(Block block) {
         Stack<Block> totalChain = findChain(block);
         boolean isValid = true;
@@ -219,25 +183,6 @@ public class Node {
         Stack<Block> chain = new Stack<>();
         chain.push(startBlock);
         return findChain(chain);
-    }
-
-    private Stack<StakeBlock> findStakeBlockChain(StakeBlock startBlock) {
-        Stack<StakeBlock> chain = new Stack<StakeBlock>();
-        chain.push(startBlock);
-        return findStakeBlockChain(chain);
-    }
-
-    private Stack<StakeBlock> findStakeBlockChain(Stack<StakeBlock> chain) {
-        StakeBlock lastBlock = chain.peek();
-        String hashForPrevious = lastBlock.getPrevious();
-
-        if (hashForPrevious.equals(StakeBlock.FIRST_HASH)) { //TODO: what is the hash value for the first block?
-            return chain;
-        }
-        else {
-            chain.push(stakeBlockChain.get(hashForPrevious));
-            return findStakeBlockChain(chain);
-        }
     }
 
     private Stack<Block> findChain(Stack<Block> chain) {

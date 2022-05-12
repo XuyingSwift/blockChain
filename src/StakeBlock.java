@@ -19,39 +19,30 @@ public class StakeBlock {
 
     private int number;
     private Transaction[] transactions;
-    private final int reward = 100;
+    public static final int BASE_REWARD = 100;
+    private int reward;
     private ArrayList<String> verifiers;
     private String signature;
     private String finalSignature;
     private String previous;
     private String hash;
     private StakePerson stakePerson;
-    private int stake;
 
-    public StakeBlock(int number, Transaction[] transactions, String signature, String finalSignature, String stakePerson, int stakeAmount) {
+    public StakeBlock(int number, String stakePerson, int stakeAmount, String previous) {
         this.number = number;
-        this.transactions = transactions;
+        this.transactions = null;
         this.verifiers = new ArrayList<>();
-        this.signature = signature;
-        this.finalSignature = finalSignature;
         this.hash = null;
-        this.previous = null;
+        this.previous = previous;
         this.stakePerson = new StakePerson(stakePerson, stakeAmount);
-        this.stake = 0;
+        reward = number * BASE_REWARD;
     }
 
     public void setStakePerson(StakePerson stakePerson) {
         this.stakePerson = stakePerson;
     }
 
-    public int getStake() {
-        return stake;
-    }
-
-    public void setStake(int stake) {
-        this.stake = stake;
-    }
-
+    /*
     public void getBlockData() {
         StringBuilder data = new StringBuilder();
         data.append(this.number);
@@ -62,6 +53,15 @@ public class StakeBlock {
             this.hash = hashBlock(data.toString());
         }
         data.append(this.hash);
+    }*/
+
+    public void makeBlockHash() {
+        StringBuilder data = new StringBuilder();
+        data.append(this.number);
+        data.append(Arrays.toString(this.transactions));
+        data.append(this.previous);
+        // making the block hash
+        this.hash = hashBlock(data.toString());
     }
 
     private String hashBlock(String data) {
@@ -79,16 +79,16 @@ public class StakeBlock {
         this.number = number;
     }
 
+    public int getReward() {
+        return this.reward;
+    }
+
     public Transaction[] getTransactions() {
         return transactions;
     }
 
     public void setTransactions(Transaction[] transactions) {
         this.transactions = transactions;
-    }
-
-    public int getReward() {
-        return reward;
     }
 
     public ArrayList<String> getVerifiers() {

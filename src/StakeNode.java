@@ -22,9 +22,9 @@ public class StakeNode {
     private final int PROBABILITY = 40;
     private final int HEARTBEAT_TIME = 50 * NodeRunner.STAKE_SLOW_FACTOR, BLOCK_PERIOD = 750 * NodeRunner.STAKE_SLOW_FACTOR, MAJORITY;
     private String name;
-    private HashMap<String, Block> blockChain;
+    private HashMap<String, StakeBlock> blockChain;
     private HashMap<String, RemoteNode> remoteNodes;
-    private Block longestChainHead;
+    private StakeBlock longestChainHead;
     private Server server;
     private HashMap<UUID, Message> awaitingReplies;
     private ArrayList<Client> openClients;
@@ -33,7 +33,7 @@ public class StakeNode {
     private String state, votedFor;
     private HashMap<String, BlockMeta> blockMeta;
     private long blockPeriodStart;
-    private Block blockToVerify;
+    private StakeBlock blockToVerify;
     private BlockMeta toVerifyMeta;
     private int verifyCount;
     private KeyGenerator keyGenerator;
@@ -66,7 +66,7 @@ public class StakeNode {
             e.printStackTrace();
         }
         try {
-            this.encryptDecrypt = new EncryptDecrypt();
+            this.encryptDecrypt = new EncryptDecrypt(keyGenerator.getPublicKey(), keyGenerator.getPrivateKey());
         } catch (NoSuchAlgorithmException e) {
             e.printStackTrace();
         } catch (NoSuchPaddingException e) {
@@ -86,7 +86,7 @@ public class StakeNode {
 
                 //if we already had a block to verify since the last time we were a leader, double check whether it's valid
                 //if it's not a valid block, discard it and start a new one; otherwise, keep waiting on it
-                if (this.blockToVerify != null && !verifyBlock(blockToVerify)) {
+                if (this.blockToVerify != null && !verifyStakeBlock(blockToVerify)) {
                     System.out.println(Colors.ANSI_RED + "StakeNode (" + Thread.currentThread().getName() + "): Block " + blockToVerify.getNumber() + " [..." + blockToVerify.getHash().substring(57) + "] with previous block ..." + blockToVerify.getPrevious().substring(57) + " did not get signatures and was invalid; discarding" + Colors.ANSI_RESET);
                     blockToVerify = null;
                     toVerifyMeta = null;
@@ -107,8 +107,7 @@ public class StakeNode {
                 nextHolder = this.server.getNextReadyHolder();
             }
 
-            //TODO: this is not how verification actually works
-            if (blockToVerify != null && this.verifyCount >= 2) {
+            if (blockToVerify != null && hasEnoughStake(blockToVerify)) {
                 addBlock(blockToVerify, toVerifyMeta);
                 sendAddBlock(blockToVerify, toVerifyMeta);
                 blockToVerify = null;
@@ -181,13 +180,16 @@ public class StakeNode {
     }
 
     private void createNextBlock() {
-        Block newBlock;
+        StakeBlock newBlock;
 
+        //(int number, String stakePerson, int stakeAmount) {
         if (longestChainHead == null) {
-            newBlock = new Block(1, this.name, Block.FIRST_HASH);
+            newBlock = new StakeBlock(1, this.name, StakeBlock.BASE_REWARD, Block.FIRST_HASH);
+            newBlock.setTransactions(new Transaction[0]);
         } else {
-            newBlock = new Block(this.longestChainHead.getNumber() + 1, this.name, this.longestChainHead.getHash());
-            HashMap<String, Integer> chainState = computeChainState(longestChainHead);
+            int newNumber = this.longestChainHead.getNumber() + 1;
+            newBlock = new StakeBlock(newNumber, this.name, StakeBlock.BASE_REWARD * newNumber, this.longestChainHead.getHash());
+            HashMap<String, Integer> chainState = computeStakeChainState(longestChainHead);
             System.out.println("    Starting state of next block " + newBlock.getNumber() + ": " + chainState.toString());
             GenerateTransaction transactionGenerator = new GenerateTransaction(chainState);
             Transaction[] newTrans = transactionGenerator.generateTransaction();
@@ -197,14 +199,14 @@ public class StakeNode {
 
         System.out.println(Colors.ANSI_CYAN + "StakeNode (" + Thread.currentThread().getName() + "): Generated block " + newBlock.getNumber() + " with previous block ..." + newBlock.getPrevious().substring(57) + Colors.ANSI_RESET);
 
-        newBlock.mineBlock(""); //empty prefix will accept first hash generated for block
+        newBlock.makeBlockHash();
         this.blockToVerify = newBlock;
         this.verifyCount = 0;
         this.toVerifyMeta = new BlockMeta(this.term, this.name);
         sendVerifyBlock(newBlock);
     }
 
-    private void sendVerifyBlock(Block block) {
+    private void sendVerifyBlock(StakeBlock block) {
         Gson gson = new Gson();
         JsonObject verifyInfo = new JsonObject();
 
@@ -229,7 +231,7 @@ public class StakeNode {
         JsonObject payloadJson = new JsonParser().parse(message.getPayload()).getAsJsonObject();
 
         Gson gson = new Gson();
-        Block newBlock = gson.fromJson(payloadJson.get(BLOCK_ELE), Block.class);
+        StakeBlock newBlock = gson.fromJson(payloadJson.get(BLOCK_ELE), StakeBlock.class);
 
         if (payloadJson.get(LEADER_TERM).getAsInt() >= this.term) {
             this.timer.reset();
@@ -250,7 +252,7 @@ public class StakeNode {
             System.out.println(Colors.ANSI_RED + "StakeNode (" + Thread.currentThread().getName() + "): New block " + newBlock.getNumber() + " [..." + newBlock.getHash().substring(57) + "] with previous block ..." + newBlock.getPrevious().substring(57) + " was not valid (node " + message.getSender() + " made too many); rejecting!" + Colors.ANSI_RESET);
             responseJson.addProperty("result", false);
         }
-        else if (verifyBlock(newBlock)) {
+        else if (verifyStakeBlock(newBlock)) {
             responseJson.addProperty("result", true);
         }
         else {
@@ -258,20 +260,22 @@ public class StakeNode {
             responseJson.addProperty("result", false);
         }
 
+        //TODO: add signature
         responseJson.addProperty("originalMessageId", message.getGuid().toString());
         responseJson.addProperty("verifiedBlock", newBlock.getHash());
         Message response = new Message(this.name, message.getSender(), Message.REPLY_TYPE, responseJson.toString());
         sendMessage(message.getSender(), response, false);
     }
 
+    //TODO: add signature
     private void processVerifyBlockReply(Message message) {
         JsonObject replyJson = new JsonParser().parse(message.getPayload()).getAsJsonObject();
         if (blockToVerify != null && replyJson.get("result").getAsBoolean() && replyJson.get("verifiedBlock").getAsString().equals(this.blockToVerify.getHash())) {
-            this.verifyCount++;
+            blockToVerify.getVerifiers().add(message.getSender());
         }
     }
 
-    private void sendAddBlock(Block block, BlockMeta blockMeta) {
+    private void sendAddBlock(StakeBlock block, BlockMeta blockMeta) {
         Gson gson = new Gson();
         JsonObject blockInfo = new JsonObject();
 
@@ -296,7 +300,7 @@ public class StakeNode {
         JsonObject payloadJson = new JsonParser().parse(message.getPayload()).getAsJsonObject();
 
         Gson gson = new Gson();
-        Block newBlock = gson.fromJson(payloadJson.get(BLOCK_ELE), Block.class);
+        StakeBlock newBlock = gson.fromJson(payloadJson.get(BLOCK_ELE), StakeBlock.class);
         BlockMeta newMeta = gson.fromJson(payloadJson.get(BLOCK_META_ELE), BlockMeta.class);
 
         if (payloadJson.get(LEADER_TERM).getAsInt() >= this.term) {
@@ -478,7 +482,7 @@ public class StakeNode {
         }
     }
 
-    private void addBlock(Block block, BlockMeta blockMeta) {
+    private void addBlock(StakeBlock block, BlockMeta blockMeta) {
         System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): Adding new block " + block.getNumber() + " [..." + block.getHash().substring(57) + "] with previous block ..." + block.getPrevious().substring(57) + Colors.ANSI_RESET);
         this.blockChain.put(block.getHash(), block);
         this.blockMeta.put(block.getHash(), blockMeta);
@@ -489,20 +493,27 @@ public class StakeNode {
         }
     }
 
-    private HashMap<String, Integer> computeChainState(Block lastBlock) {
-        Stack<Block> totalChain = findChain(lastBlock);
+    private HashMap<String, Integer> computeStakeChainState(StakeBlock stakeBlock) {
+        Stack<StakeBlock> totalChain = findStakeBlockChain(stakeBlock);
         HashMap<String, Integer> chainState = new HashMap<>();
 
         for (String curPerson : remoteNodes.keySet()) chainState.put(curPerson, 0);
 
-        while (!totalChain.empty()) {
-            Block curBlock = totalChain.pop();
+        while (!totalChain.isEmpty()) {
+            StakeBlock curBlock = totalChain.pop();
 
-            String miner = curBlock.getCoinbase().getPerson();
+            String miner = curBlock.getStakePerson().getStake_person();
             if (!chainState.containsKey(miner)) {
                 chainState.put(miner, 0);
             }
-            chainState.put(miner, chainState.get(miner) + curBlock.getCoinbase().getAmount());
+            chainState.put(miner, chainState.get(miner) + curBlock.getStakePerson().getStake_amount());
+
+            for (String curVerifier : curBlock.getVerifiers()) {
+                if (!chainState.containsKey(curVerifier)) {
+                    chainState.put(curVerifier, 0);
+                }
+                chainState.put(curVerifier, chainState.get(curVerifier) + curBlock.getReward() / 2);
+            }
 
             for (Transaction curTxn : curBlock.getTransactions()) {
                 if (curTxn != null) {
@@ -524,19 +535,26 @@ public class StakeNode {
         return chainState;
     }
 
-    private boolean verifyBlock(Block block) {
-        Stack<Block> totalChain = findChain(block);
+    public boolean verifyStakeBlock(StakeBlock stakeBlock) {
+        Stack<StakeBlock> totalChain = findStakeBlockChain(stakeBlock) ;
         boolean isValid = true;
         HashMap<String, Integer> chainState = new HashMap<>();
 
         while (!totalChain.isEmpty() && isValid) {
-            Block curBlock = totalChain.pop();
+            StakeBlock curBlock = totalChain.pop();
 
-            String miner = curBlock.getCoinbase().getPerson();
+            String miner = curBlock.getStakePerson().getStake_person();
             if (!chainState.containsKey(miner)) {
                 chainState.put(miner, 0);
             }
-            chainState.put(miner, chainState.get(miner) + curBlock.getCoinbase().getAmount());
+            chainState.put(miner, chainState.get(miner) + curBlock.getStakePerson().getStake_amount());
+
+            for (String curVerifier : curBlock.getVerifiers()) {
+                if (!chainState.containsKey(curVerifier)) {
+                    chainState.put(curVerifier, 0);
+                }
+                chainState.put(curVerifier, chainState.get(curVerifier) + curBlock.getReward() / 2);
+            }
 
             for (Transaction curTxn : curBlock.getTransactions()) {
                 if (curTxn != null) {
@@ -560,22 +578,22 @@ public class StakeNode {
         return isValid;
     }
 
-    private Stack<Block> findChain(Block startBlock) {
-        Stack<Block> chain = new Stack<>();
+    private Stack<StakeBlock> findStakeBlockChain(StakeBlock startBlock) {
+        Stack<StakeBlock> chain = new Stack<StakeBlock>();
         chain.push(startBlock);
-        return findChain(chain);
+        return findStakeBlockChain(chain);
     }
 
-    private Stack<Block> findChain(Stack<Block> chain) {
-        Block lastBlock = chain.peek();
+    private Stack<StakeBlock> findStakeBlockChain(Stack<StakeBlock> chain) {
+        StakeBlock lastBlock = chain.peek();
         String hashForPrevious = lastBlock.getPrevious();
 
-        if (hashForPrevious.equals(Block.FIRST_HASH)) {
+        if (hashForPrevious.equals(StakeBlock.FIRST_HASH)) { //TODO: what is the hash value for the first block?
             return chain;
         }
         else {
             chain.push(blockChain.get(hashForPrevious));
-            return findChain(chain);
+            return findStakeBlockChain(chain);
         }
     }
 
@@ -588,6 +606,19 @@ public class StakeNode {
 
         if (blockMeta.size() > 0) return (int) (Math.ceil(blockCount * 100 / this.blockMeta.size()));
         else return 0;
+    }
+
+    private boolean hasEnoughStake(StakeBlock block) {
+        int txnTotal = 0;
+
+        for(Transaction curTxn : block.getTransactions()) {
+            txnTotal += curTxn.getAmount();
+        }
+
+        int stakeTotal = block.getStakePerson().getStake_amount();
+        stakeTotal += block.getVerifiers().size() * (block.getReward() / 2);
+
+        return stakeTotal >= txnTotal;
     }
 
     private void cleanClients() {
