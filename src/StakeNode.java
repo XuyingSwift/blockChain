@@ -16,6 +16,7 @@ public class StakeNode {
     public static final String LEADER_TERM = "leaderTerm", LEADER_ID = "leaderId";
     //field names for block messages
     public static final String BLOCK_ELE = "block", BLOCK_META_ELE = "blockMeta";
+    private final int PROBABILITY = 40;
     private final int HEARTBEAT_TIME = 50 * NodeRunner.STAKE_SLOW_FACTOR, BLOCK_PERIOD = 750 * NodeRunner.STAKE_SLOW_FACTOR, MAJORITY;
     private String name;
     private HashMap<String, Block> blockChain;
@@ -108,22 +109,42 @@ public class StakeNode {
     }
 
     private void startElection() {
-        // switch to candidate state
-        this.state = CANDID;
-        // increment its term
-        this.term++;
-        System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): became candidate in term " + term + Colors.ANSI_RESET);
-        //start with vote for self
-        this.voteCount = 1;
-        // set voted for to the candidate id
-        this.votedFor = name;
-        // reset the term timer
-        this.timer.reset();
+        //check if this node will exceed P if it makes the next block
+        //also only randomly decide whether we want to make the next block
+        Random rand = new Random();
+        int myProportion = getChainProportion(this.name), myRand = rand.nextInt(100) + 1;
 
-        //send a requestVote to all other nodes
-        for (String remoteNode : this.remoteNodes.keySet()) {
-            if (remoteNode.equals(this.name)) continue;
-            sendRequestVote(remoteNode);
+        if (myProportion <= PROBABILITY && myRand <= PROBABILITY) {
+            // switch to candidate state
+            this.state = CANDID;
+            // increment its term
+            this.term++;
+            System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): became candidate in term " + term + Colors.ANSI_RESET);
+            //start with vote for self
+            this.voteCount = 1;
+            // set voted for to the candidate id
+            this.votedFor = name;
+            // reset the term timer
+            this.timer.reset();
+
+            //send a requestVote to all other nodes
+            for (String remoteNode : this.remoteNodes.keySet()) {
+                if (remoteNode.equals(this.name)) continue;
+                sendRequestVote(remoteNode);
+            }
+        }
+        else {
+            this.timer.reset();
+            if (myProportion > PROBABILITY) {
+                System.out.println(Colors.ANSI_RED + "StakeNode (" + Thread.currentThread().getName() + "): declined to start election because I made too many blocks" + Colors.ANSI_RESET);
+                System.out.println(myProportion);
+                for (Map.Entry<String, BlockMeta> curEntry : blockMeta.entrySet()) {
+                    System.out.println(curEntry.getKey().substring(57) + " - " + curEntry.getValue().getCreator());
+                }
+            }
+            else {
+                System.out.println(Colors.ANSI_RED + "StakeNode (" + Thread.currentThread().getName() + "): declined to start election because of my random value" + Colors.ANSI_RESET);
+            }
         }
     }
 
@@ -207,11 +228,16 @@ public class StakeNode {
             }
         }
 
-        if (verifyBlock(newBlock)) {
+        //assumes block creators are the only ones who will send it for verification
+        if (getChainProportion(message.getSender()) >= PROBABILITY) {
+            System.out.println(Colors.ANSI_RED + "StakeNode (" + Thread.currentThread().getName() + "): New block " + newBlock.getNumber() + " [..." + newBlock.getHash().substring(57) + "] with previous block ..." + newBlock.getPrevious().substring(57) + " was not valid (node " + message.getSender() + " made too many); rejecting!" + Colors.ANSI_RESET);
+            responseJson.addProperty("result", false);
+        }
+        else if (verifyBlock(newBlock)) {
             responseJson.addProperty("result", true);
         }
         else {
-            System.out.println(Colors.ANSI_RED + "StakeNode (" + Thread.currentThread().getName() + "): New block " + newBlock.getNumber() + " [..." + newBlock.getHash().substring(57) + "] with previous block ..." + newBlock.getPrevious().substring(57) + " was not valid; rejecting!" + Colors.ANSI_RESET);
+            System.out.println(Colors.ANSI_RED + "StakeNode (" + Thread.currentThread().getName() + "): New block " + newBlock.getNumber() + " [..." + newBlock.getHash().substring(57) + "] with previous block ..." + newBlock.getPrevious().substring(57) + " was not valid (double spending); rejecting!" + Colors.ANSI_RESET);
             responseJson.addProperty("result", false);
         }
 
@@ -223,7 +249,7 @@ public class StakeNode {
 
     private void processVerifyBlockReply(Message message) {
         JsonObject replyJson = new JsonParser().parse(message.getPayload()).getAsJsonObject();
-        if (replyJson.get("result").getAsBoolean() && replyJson.get("verifiedBlock").getAsString().equals(this.blockToVerify.getHash())) {
+        if (blockToVerify != null && replyJson.get("result").getAsBoolean() && replyJson.get("verifiedBlock").getAsString().equals(this.blockToVerify.getHash())) {
             this.verifyCount++;
         }
     }
@@ -536,6 +562,17 @@ public class StakeNode {
             chain.push(blockChain.get(hashForPrevious));
             return findChain(chain);
         }
+    }
+
+    private int getChainProportion(String node) {
+        double blockCount = 0;
+
+        for (Map.Entry<String, BlockMeta> curEntry : this.blockMeta.entrySet()) {
+            if (curEntry.getValue().getCreator().equals(node)) blockCount++;
+        }
+
+        if (blockMeta.size() > 0) return (int) (Math.ceil(blockCount * 100 / this.blockMeta.size()));
+        else return 0;
     }
 
     private void cleanClients() {
