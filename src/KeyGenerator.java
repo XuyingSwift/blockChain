@@ -28,20 +28,4 @@ public class KeyGenerator {
     public PublicKey getPublicKey() {
         return publicKey;
     }
-
-    public void writeToDisk(String path, byte[] key) {
-        File file = new File(path);
-        file.getParentFile().mkdirs();
-        try {
-            FileOutputStream fileOutputStream = new FileOutputStream(file);
-            fileOutputStream.write(key);
-            fileOutputStream.flush();
-            fileOutputStream.close();
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
-    }
 }

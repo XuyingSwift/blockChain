@@ -86,18 +86,4 @@ public class EncryptDecrypt {
         }
         return decryptedMessage;
     }
-
-    private void writeToDisk(File output, byte[] toWrite) {
-        FileOutputStream fos = null;
-        try {
-            fos = new FileOutputStream(output);
-            fos.write(toWrite);
-            fos.flush();
-            fos.close();
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
 }

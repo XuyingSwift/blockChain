@@ -1,6 +1,7 @@
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import javax.crypto.NoSuchPaddingException;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -22,6 +23,7 @@ public class Node {
     private ArrayList<Client> openClients;
     private BlockMiner blockMiner;
     private KeyGenerator keyGenerator;
+    private EncryptDecrypt encryptDecrypt;
     public Node(String name, int port, HashMap<String, RemoteNode> remoteNodes) {
         this.name = name;
         this.blockChain = new HashMap<>();
@@ -31,6 +33,20 @@ public class Node {
         this.awaitingReplies = new HashMap<>();
         this.openClients = new ArrayList<>();
         this.server = new Server(port);
+        try {
+            this.keyGenerator = new KeyGenerator(1024);
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+        } catch (NoSuchProviderException e) {
+            e.printStackTrace();
+        }
+        try {
+            this.encryptDecrypt = new EncryptDecrypt();
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+        } catch (NoSuchPaddingException e) {
+            e.printStackTrace();
+        }
     }
 
     public void run() {
@@ -105,16 +121,6 @@ public class Node {
         }
     }
 
-    private void generateKeys() {
-        try {
-            this.keyGenerator = new KeyGenerator(1024);
-            this.keyGenerator.createKeys();
-            this.keyGenerator.writeToDisk("KeyPair/publicKey", this.keyGenerator.getPublicKey().getEncoded());
-            this.keyGenerator.writeToDisk("KeyPair/privateKey", this.keyGenerator.getPrivateKey().getEncoded());
-        } catch (NoSuchAlgorithmException | NoSuchProviderException e) {
-            System.err.println(e.getMessage());
-        }
-    }
     private HashMap<String, Integer> computeChainState(Block lastBlock) {
         Stack<Block> totalChain = findChain(lastBlock);
         HashMap<String, Integer> chainState = new HashMap<>();

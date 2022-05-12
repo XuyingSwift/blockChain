@@ -1,6 +1,7 @@
 import com.google.common.hash.Hashing;
 
 import java.nio.charset.StandardCharsets;
+import java.security.PublicKey;
 import java.util.ArrayList;
 import java.util.Arrays;
 
@@ -37,17 +38,16 @@ public class StakeBlock {
         this.stakePerson = new StakePerson(stakePerson, stakeAmount);
     }
 
-    public void signBlock(String validPrefix) {
+    public void getBlockData() {
         StringBuilder data = new StringBuilder();
         data.append(this.number);
         data.append(Arrays.toString(this.transactions));
         data.append(this.previous);
         // making the block hash
         while (this.hash == null) {
-            StringBuilder finalData = new StringBuilder();
-            finalData.append(data);
-            this.hash = hashBlock(finalData.toString());
+            this.hash = hashBlock(data.toString());
         }
+        data.append(this.hash);
     }
 
     private String hashBlock(String data) {
