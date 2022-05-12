@@ -1,9 +1,12 @@
 import com.google.gson.*;
 import com.google.gson.reflect.TypeToken;
 
+import javax.crypto.NoSuchPaddingException;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
 import java.util.*;
 
 public class StakeNode {
@@ -26,13 +29,15 @@ public class StakeNode {
     private HashMap<UUID, Message> awaitingReplies;
     private ArrayList<Client> openClients;
     private ElectionTimer timer;
-    private Integer voteCount, term, commitIndex;
-    private String state, votedFor, currentLeader;
+    private Integer voteCount, term;
+    private String state, votedFor;
     private HashMap<String, BlockMeta> blockMeta;
     private long blockPeriodStart;
     private Block blockToVerify;
     private BlockMeta toVerifyMeta;
     private int verifyCount;
+    private KeyGenerator keyGenerator;
+    private EncryptDecrypt encryptDecrypt;
 
     public StakeNode(String name, int port, HashMap<String, RemoteNode> remoteNodes) {
         this.name = name;
@@ -50,9 +55,23 @@ public class StakeNode {
         this.term = 0;
         this.voteCount = 0;
         this.state = FOLLOW;
-        this.currentLeader = null;
         this.votedFor = null;
         this.blockMeta = new HashMap<>();
+
+        try {
+            this.keyGenerator = new KeyGenerator(1024);
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+        } catch (NoSuchProviderException e) {
+            e.printStackTrace();
+        }
+        try {
+            this.encryptDecrypt = new EncryptDecrypt();
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+        } catch (NoSuchPaddingException e) {
+            e.printStackTrace();
+        }
     }
 
     public void run() {
@@ -151,7 +170,6 @@ public class StakeNode {
     private void becomeLeader() {
         if (this.state.equals(CANDID)) {
             this.state = LEADER;
-            this.currentLeader = this.name;
 
             System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): became the leader in term " + term + "!!" + Colors.ANSI_RESET);
             blockPeriodStart = System.nanoTime();
@@ -215,7 +233,6 @@ public class StakeNode {
 
         if (payloadJson.get(LEADER_TERM).getAsInt() >= this.term) {
             this.timer.reset();
-            this.currentLeader = message.getSender();
 
             if (!this.state.equals(FOLLOW)) {
                 System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): switching to follower, new term " + payloadJson.get(LEADER_TERM).getAsInt() + " from node " + message.getSender() + " greater than my term " + this.term + Colors.ANSI_RESET);
@@ -284,7 +301,6 @@ public class StakeNode {
 
         if (payloadJson.get(LEADER_TERM).getAsInt() >= this.term) {
             this.timer.reset();
-            this.currentLeader = message.getSender();
 
             if (!this.state.equals(FOLLOW)) {
                 System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): switching to follower, new term " + payloadJson.get(LEADER_TERM).getAsInt() + " from node " + message.getSender() + " greater than my term " + this.term + Colors.ANSI_RESET);
@@ -317,7 +333,6 @@ public class StakeNode {
 
         if (payloadJson.get(LEADER_TERM).getAsInt() >= this.term) {
             this.timer.reset();
-            this.currentLeader = message.getSender();
 
             if (!this.state.equals(FOLLOW)) {
                 System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): switching to follower, new term " + payloadJson.get(LEADER_TERM).getAsInt() + " from node " + message.getSender() + " greater than my term " + this.term + Colors.ANSI_RESET);
