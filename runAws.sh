@@ -6,7 +6,7 @@ read nodeId
 echo -n "Enter node type ('stake' or 'pow'): "
 read nodeType
 
-configStr="ben 18.212.28.37 4000 xuying 52.207.209.55 4000 omar 44.204.63.193 4000 hattie 18.118.51.255 4000"
+configStr="ben 44.202.108.131 4000 xuying 54.165.151.239 4000 omar 18.219.253.101 4000 hattie 54.67.66.98 4000"
 args="$nodeType $nodeId $configStr"
 echo $args
 
