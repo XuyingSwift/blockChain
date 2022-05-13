@@ -188,12 +188,20 @@ public class StakeNode {
             newBlock.setTransactions(new Transaction[0]);
         } else {
             int newNumber = this.longestChainHead.getNumber() + 1;
-            newBlock = new StakeBlock(newNumber, this.name, StakeBlock.BASE_REWARD * newNumber, this.longestChainHead.getHash());
-            HashMap<String, Integer> chainState = computeStakeChainState(longestChainHead);
-            System.out.println("    Starting state of next block " + newBlock.getNumber() + ": " + chainState.toString());
+            HashMap<String, Integer> chainState = computeStakeChainState(this.longestChainHead);
+            System.out.println("    Starting state of next block " + newNumber + ": " + chainState);
+
             GenerateTransaction transactionGenerator = new GenerateTransaction(chainState);
             Transaction[] newTrans = transactionGenerator.generateTransaction();
+
+            int txnTotal = 0;
+            for (Transaction curTxn : newTrans) {
+                if (curTxn != null) txnTotal += curTxn.getAmount();
+            }
+
+            newBlock = new StakeBlock(newNumber, this.name, txnTotal / 2, this.longestChainHead.getHash());
             newBlock.setTransactions(newTrans);
+
             System.out.println("    Transactions for next block " + newBlock.getNumber() + ": " + Arrays.toString(newTrans));
         }
 
@@ -497,7 +505,7 @@ public class StakeNode {
         Stack<StakeBlock> totalChain = findStakeBlockChain(stakeBlock);
         HashMap<String, Integer> chainState = new HashMap<>();
 
-        for (String curPerson : remoteNodes.keySet()) chainState.put(curPerson, 0);
+        for (String curPerson : this.remoteNodes.keySet()) chainState.put(curPerson, 0);
 
         while (!totalChain.isEmpty()) {
             StakeBlock curBlock = totalChain.pop();
@@ -512,7 +520,7 @@ public class StakeNode {
                 if (!chainState.containsKey(curVerifier)) {
                     chainState.put(curVerifier, 0);
                 }
-                chainState.put(curVerifier, chainState.get(curVerifier) + curBlock.getReward() / 2);
+                chainState.put(curVerifier, chainState.get(curVerifier) + curBlock.getReward());
             }
 
             for (Transaction curTxn : curBlock.getTransactions()) {
@@ -553,7 +561,7 @@ public class StakeNode {
                 if (!chainState.containsKey(curVerifier)) {
                     chainState.put(curVerifier, 0);
                 }
-                chainState.put(curVerifier, chainState.get(curVerifier) + curBlock.getReward() / 2);
+                chainState.put(curVerifier, chainState.get(curVerifier) + curBlock.getReward());
             }
 
             for (Transaction curTxn : curBlock.getTransactions()) {
@@ -609,14 +617,16 @@ public class StakeNode {
     }
 
     private boolean hasEnoughStake(StakeBlock block) {
+        if (block.getVerifiers().size() == 0) return false;
+
         int txnTotal = 0;
 
         for(Transaction curTxn : block.getTransactions()) {
-            txnTotal += curTxn.getAmount();
+            if (curTxn != null) txnTotal += curTxn.getAmount();
         }
 
         int stakeTotal = block.getStakePerson().getStake_amount();
-        stakeTotal += block.getVerifiers().size() * (block.getReward() / 2);
+        stakeTotal += block.getVerifiers().size() * (block.getReward());
 
         return stakeTotal >= txnTotal;
     }

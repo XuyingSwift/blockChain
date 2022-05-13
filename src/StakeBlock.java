@@ -35,7 +35,7 @@ public class StakeBlock {
         this.hash = null;
         this.previous = previous;
         this.stakePerson = new StakePerson(stakePerson, stakeAmount);
-        reward = number * BASE_REWARD;
+        this.reward = stakeAmount / 2 + 2;
     }
 
     public void setStakePerson(StakePerson stakePerson) {
