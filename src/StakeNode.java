@@ -10,7 +10,7 @@ import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.*;
 
-public class StakeNode {
+public class StakeNode implements NodeInter {
     //node states
     private final String FOLLOW = "FOLLOWER", CANDID = "CANDIDATE", LEADER = "LEADER";
     //field names for request vote message
@@ -281,7 +281,6 @@ public class StakeNode {
             responseJson.addProperty("result", false);
         }
 
-        //TODO: add signature
         responseJson.addProperty("originalMessageId", message.getGuid().toString());
         responseJson.addProperty("verifiedBlock", newBlock.getHash());
 
@@ -292,7 +291,6 @@ public class StakeNode {
         sendMessage(message.getSender(), response, false);
     }
 
-    //TODO: add signature check
     private void processVerifyBlockReply(Message message) {
         JsonObject replyJson = new JsonParser().parse(message.getPayload()).getAsJsonObject();
         if (blockToVerify != null && replyJson.get("result").getAsBoolean() && replyJson.get("verifiedBlock").getAsString().equals(this.blockToVerify.getHash())) {

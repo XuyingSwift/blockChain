@@ -12,7 +12,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
 import java.util.*;
 
-public class Node {
+public class Node implements NodeInter {
     private boolean testing = false;
     private String name;
     private HashMap<String, Block> blockChain;
@@ -35,8 +35,11 @@ public class Node {
         this.server = new Server(port);
     }
 
-    public void run() {
+    public void startServer() {
         this.server.start();
+    }
+
+    public void run() {
         MessageHolder nextHolder;
         long lastTest = System.nanoTime();
         this.blockMiner = new BlockMiner();

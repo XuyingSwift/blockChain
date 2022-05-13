@@ -7,13 +7,22 @@ public class NodeRunner {
     public static final int STAKE_SLOW_FACTOR = 20;
 
     public static void main(String[] args) {
-        //config string format: "myName myName 127.0.0.1 5000 remote_1 127.0.0.1 5001 remote_2 127.0.0.1 5002", ...
-        String myName = args[0];
+        //config string format: "<mode> myName myName 127.0.0.1 5000 remote_1 127.0.0.1 5001 remote_2 127.0.0.1 5002", ...
+        String mode = args[0];
+
+        String myName = args[1];
         HashMap<String, RemoteNode> remoteNodes = buildRemoteList(args);
         System.out.println(myName);
         int port = remoteNodes.get(myName).getPort();
 
-        StakeNode node = new StakeNode(myName, port, remoteNodes);
+        NodeInter node = null;
+
+        if (mode.equals("stake")) {
+            node = new StakeNode(myName, port, remoteNodes);
+        }
+        else if (mode.equals("pow")) {
+            node = new Node(myName, port, remoteNodes);
+        }
 
         BufferedReader input = new BufferedReader(new InputStreamReader(System.in));
         System.out.println("Press <enter> to continue...");
@@ -52,7 +61,7 @@ public class NodeRunner {
     private static HashMap<String, RemoteNode> buildRemoteList(String[] config) {
         HashMap<String, RemoteNode> remotes = new HashMap<>();
 
-        int idx = 1;
+        int idx = 2;
         while (idx < config.length) {
             String curId = config[idx];
             idx++;
