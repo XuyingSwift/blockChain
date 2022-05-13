@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.PublicKey;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 
 public class StakeBlock {
     public static final String FIRST_HASH = "0".repeat(64);
@@ -21,7 +22,7 @@ public class StakeBlock {
     private Transaction[] transactions;
     public static final int BASE_REWARD = 100;
     private int reward;
-    private ArrayList<String> verifiers;
+    private HashMap<String, String> verifiers;
     private String signature;
     private String finalSignature;
     private String previous;
@@ -31,7 +32,7 @@ public class StakeBlock {
     public StakeBlock(int number, String stakePerson, int stakeAmount, String previous) {
         this.number = number;
         this.transactions = null;
-        this.verifiers = new ArrayList<>();
+        this.verifiers = new HashMap<>();
         this.hash = null;
         this.previous = previous;
         this.stakePerson = new StakePerson(stakePerson, stakeAmount);
@@ -91,12 +92,8 @@ public class StakeBlock {
         this.transactions = transactions;
     }
 
-    public ArrayList<String> getVerifiers() {
+    public HashMap<String, String> getVerifiers() {
         return verifiers;
-    }
-
-    public void setVerifiers(ArrayList<String> verifiers) {
-        this.verifiers = verifiers;
     }
 
     public String getSignature() {

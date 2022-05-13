@@ -324,7 +324,7 @@ public class Node {
         diskInfo.addProperty("node_name", this.name);
         Gson gson = new Gson();
         diskInfo.addProperty("block_chain", gson.toJson(blockChain));
-        String fileName = "Node_" + this.name + "_blackChain.json";
+        String fileName = "Node_" + this.name + "_blockChain.json";
         BufferedWriter writer = new BufferedWriter(new FileWriter(fileName));
         writer.write(diskInfo.toString());
         writer.close();

@@ -19,6 +19,7 @@ public class NodeRunner {
         System.out.println("Press <enter> to continue...");
         try {
             input.readLine();
+            node.startServer();
             System.out.print("Starting in ");
             for (int i = 3; i >= 1; i--) {
                 System.out.print(i + "..");

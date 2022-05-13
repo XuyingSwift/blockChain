@@ -5,8 +5,9 @@ import javax.crypto.NoSuchPaddingException;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
+import java.security.*;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.*;
 
 public class StakeNode {
@@ -38,6 +39,7 @@ public class StakeNode {
     private int verifyCount;
     private KeyGenerator keyGenerator;
     private EncryptDecrypt encryptDecrypt;
+    private HashMap<String, PublicKey> publicKeys;
 
     public StakeNode(String name, int port, HashMap<String, RemoteNode> remoteNodes) {
         this.name = name;
@@ -49,6 +51,7 @@ public class StakeNode {
         this.awaitingReplies = new HashMap<>();
         this.openClients = new ArrayList<>();
         this.server = new Server(port);
+        this.publicKeys = new HashMap<>();
 
         this.timer = new ElectionTimer();
         this.MAJORITY = (int) Math.ceil(remoteNodes.size() / 2.0) + (remoteNodes.size() % 2 == 0 ? 1 : 0);
@@ -60,6 +63,7 @@ public class StakeNode {
 
         try {
             this.keyGenerator = new KeyGenerator(1024);
+            publicKeys.put(this.name, keyGenerator.getPublicKey());
         } catch (NoSuchAlgorithmException e) {
             e.printStackTrace();
         } catch (NoSuchProviderException e) {
@@ -74,8 +78,13 @@ public class StakeNode {
         }
     }
 
-    public void run() {
+    public void startServer() {
         this.server.start();
+    }
+
+    public void run() {
+        sendAllPublicKeys();
+
         this.timer.start();
         MessageHolder nextHolder;
         long lastHeartbeat = System.nanoTime();
@@ -107,7 +116,11 @@ public class StakeNode {
                 nextHolder = this.server.getNextReadyHolder();
             }
 
-            if (blockToVerify != null && hasEnoughStake(blockToVerify)) {
+            if (this.blockToVerify != null && hasEnoughStake(this.blockToVerify)) {
+                //add finalSignature
+                String finalSignature = this.encryptDecrypt.encryptMessage(this.blockToVerify.getHash(), this.keyGenerator.getPrivateKey());
+                blockToVerify.setFinalSignature(finalSignature);
+
                 addBlock(blockToVerify, toVerifyMeta);
                 sendAddBlock(blockToVerify, toVerifyMeta);
                 blockToVerify = null;
@@ -271,15 +284,33 @@ public class StakeNode {
         //TODO: add signature
         responseJson.addProperty("originalMessageId", message.getGuid().toString());
         responseJson.addProperty("verifiedBlock", newBlock.getHash());
+
+        String verifySignature = this.encryptDecrypt.encryptMessage(newBlock.getHash(), this.keyGenerator.getPrivateKey());
+        responseJson.addProperty("verifySignature", verifySignature);
+
         Message response = new Message(this.name, message.getSender(), Message.REPLY_TYPE, responseJson.toString());
         sendMessage(message.getSender(), response, false);
     }
 
-    //TODO: add signature
+    //TODO: add signature check
     private void processVerifyBlockReply(Message message) {
         JsonObject replyJson = new JsonParser().parse(message.getPayload()).getAsJsonObject();
         if (blockToVerify != null && replyJson.get("result").getAsBoolean() && replyJson.get("verifiedBlock").getAsString().equals(this.blockToVerify.getHash())) {
-            blockToVerify.getVerifiers().add(message.getSender());
+
+            if (publicKeys.containsKey(message.getSender())) {
+                //decrypt verifier signature with creator's public key
+                //check that it equals block hash
+                String signatureDecrypt = encryptDecrypt.decryptMessage(replyJson.get("verifySignature").getAsString(), publicKeys.get(message.getSender()));
+                if (!this.blockToVerify.getHash().equals(signatureDecrypt)) {
+                    System.out.println(Colors.ANSI_RED + ">>>StakeNode (" + Thread.currentThread().getName() + "): BLOCK FINAL SIGNATURE DIDN'T MATCH" + Colors.ANSI_RESET);
+                }
+                else {
+                    this.blockToVerify.getVerifiers().put(message.getSender(), replyJson.get("verifySignature").getAsString());
+                }
+            }
+            else {
+                this.blockToVerify.getVerifiers().put(message.getSender(), replyJson.get("verifySignature").getAsString());
+            }
         }
     }
 
@@ -448,6 +479,37 @@ public class StakeNode {
         }
     }
 
+    private void sendAllPublicKeys() {
+        JsonObject publicKeyInfo = new JsonObject();
+        //we need to get the public key as a base 64 encoded string
+
+        byte[] publicBytes = keyGenerator.getPublicKey().getEncoded();
+        String stringValue = Base64.getEncoder().encodeToString(publicBytes);
+        publicKeyInfo.addProperty("publicKey", stringValue);
+
+        for (String remoteNode : this.remoteNodes.keySet()) {
+            if (remoteNode.equals(this.name)) continue;
+            Message message = new Message(this.name, remoteNode, Message.PUBLIC_KEY_TYPE, publicKeyInfo.toString());
+            sendMessage(remoteNode, message, false);
+        }
+    }
+
+    private void processPublicKeyMessage(Message message) {
+        JsonObject payloadJson = new JsonParser().parse(message.getPayload()).getAsJsonObject();
+        String keyString = payloadJson.get("publicKey").getAsString();
+
+        byte[] publicBytes = Base64.getDecoder().decode(keyString);
+        X509EncodedKeySpec keySpec = new X509EncodedKeySpec(publicBytes);
+
+        try {
+            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+            PublicKey pubKey = keyFactory.generatePublic(keySpec);
+            this.publicKeys.put(message.getSender(), pubKey);
+        } catch (NoSuchAlgorithmException | InvalidKeySpecException e) {
+            e.printStackTrace();
+        }
+    }
+
     private void sendMessage(String dest, Message message, boolean waitForReply) {
         if (waitForReply) { this.awaitingReplies.put(message.getGuid(), message); }
 
@@ -468,7 +530,7 @@ public class StakeNode {
             awaitingReplies.remove(origId);
 
             System.out.println(Colors.ANSI_CYAN + "StakeNode (" + Thread.currentThread().getName() + "): Received reply for message [" + origMessage.getGuid() + "] to node " + origMessage.getDestination() + ", processing" + Colors.ANSI_RESET);
-            //TODO: more processing based on type of original message and contents of reply
+
             if (origMessage.getType().equals(Message.REQ_VOTE_TYPE)) {
                 processReqVoteReply(message);
             }
@@ -488,9 +550,21 @@ public class StakeNode {
         else if (message.getType().equals(Message.BLOCK_TYPE)) {
             processAddBlockMessage(message);
         }
+        else if (message.getType().equals(Message.PUBLIC_KEY_TYPE)) {
+            processPublicKeyMessage(message);
+        }
     }
 
     private void addBlock(StakeBlock block, BlockMeta blockMeta) {
+        if (publicKeys.containsKey(blockMeta.getCreator())) {
+            //decrypt final signature with creator's public key
+            //check that it equals block hash
+            String signatureDecrypt = encryptDecrypt.decryptMessage(block.getFinalSignature(), publicKeys.get(blockMeta.getCreator()));
+            if (!block.getHash().equals(signatureDecrypt)) {
+                System.out.println(Colors.ANSI_RED + ">>>StakeNode (" + Thread.currentThread().getName() + "): BLOCK FINAL SIGNATURE DIDN'T MATCH" + Colors.ANSI_RESET);
+            }
+        }
+
         System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): Adding new block " + block.getNumber() + " [..." + block.getHash().substring(57) + "] with previous block ..." + block.getPrevious().substring(57) + Colors.ANSI_RESET);
         this.blockChain.put(block.getHash(), block);
         this.blockMeta.put(block.getHash(), blockMeta);
@@ -498,6 +572,12 @@ public class StakeNode {
         if (this.longestChainHead == null || block.getNumber() > this.longestChainHead.getNumber()) {
             System.out.println(Colors.ANSI_YELLOW + "StakeNode (" + Thread.currentThread().getName() + "): Updated head of my longest chain to block " + block.getNumber() + " [..." + block.getHash().substring(57) + "]" + Colors.ANSI_RESET);
             this.longestChainHead = block;
+        }
+
+        try {
+            writeToDisk();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
@@ -516,7 +596,7 @@ public class StakeNode {
             }
             chainState.put(miner, chainState.get(miner) + curBlock.getStakePerson().getStake_amount());
 
-            for (String curVerifier : curBlock.getVerifiers()) {
+            for (String curVerifier : curBlock.getVerifiers().keySet()) {
                 if (!chainState.containsKey(curVerifier)) {
                     chainState.put(curVerifier, 0);
                 }
@@ -557,7 +637,7 @@ public class StakeNode {
             }
             chainState.put(miner, chainState.get(miner) + curBlock.getStakePerson().getStake_amount());
 
-            for (String curVerifier : curBlock.getVerifiers()) {
+            for (String curVerifier : curBlock.getVerifiers().keySet()) {
                 if (!chainState.containsKey(curVerifier)) {
                     chainState.put(curVerifier, 0);
                 }
@@ -596,7 +676,7 @@ public class StakeNode {
         StakeBlock lastBlock = chain.peek();
         String hashForPrevious = lastBlock.getPrevious();
 
-        if (hashForPrevious.equals(StakeBlock.FIRST_HASH)) { //TODO: what is the hash value for the first block?
+        if (hashForPrevious.equals(StakeBlock.FIRST_HASH)) {
             return chain;
         }
         else {
@@ -653,8 +733,9 @@ public class StakeNode {
         JsonObject diskInfo = new JsonObject();
         diskInfo.addProperty("node_name", this.name);
         Gson gson = new Gson();
-        diskInfo.addProperty("block_chain", gson.toJson(blockChain));
-        String fileName = "Node_" + this.name + "_blackChain.json";
+        JsonObject chainJson = new JsonParser().parse(gson.toJson(blockChain)).getAsJsonObject();
+        diskInfo.add("block_chain", chainJson);
+        String fileName = "StakeNode_" + this.name + "_blockChain.json";
         BufferedWriter writer = new BufferedWriter(new FileWriter(fileName));
         writer.write(diskInfo.toString());
         writer.close();
